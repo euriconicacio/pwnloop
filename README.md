@@ -8,7 +8,7 @@
     88                                                88
     dP                                                dP
 
-    v1.0.0 by Eurico Nicacio (h3llh0und)
+    v1.1.0 by Eurico Nicacio (h3llh0und)
     autonomous lab-machine engagement loop
 ```
 
@@ -82,18 +82,43 @@ control structure, and every rule in it exists to make the loop converge:
 
 The second loop is the one around the first. Every engagement is required to
 change the methodology before it closes out: a pattern that generalises is
-appended to [`memory/patterns.md`](memory/patterns.md) — which the *next*
-engagement reads before it starts — a missing tool becomes a package, a
-technique becomes a reference section, a mistake becomes a rule. That file is
-deliberately short and holds no machine specifics, no credentials and no flags;
-an entry earns its place only if a run against a different box could act on it.
+appended to memory — which the *next* engagement reads before it starts — a
+missing tool becomes a package, a technique becomes a reference section, a
+mistake becomes a rule. Memory is deliberately short and holds no machine
+specifics, no credentials and no flags; an entry earns its place only if a run
+against a different box could act on it.
 
-Two machines produced six such changes — `sshpass` and `tshark` (missing when credential
-reuse and pcap analysis needed them), `bsdextrautils` (its absence silently
-breaks `searchsploit -m`), a preset git identity (without it `git commit-tree`
-refuses, which blocks plumbing-based exploitation entirely), the fact that
-`sed -i` cannot edit a bind-mounted `/etc/hosts`, and the `os.path.join`
-containment bug that produced root on the second box.
+Memory is split so that your clone and this repository never fight:
+
+| file | owner | conflicts on `git pull` |
+|---|---|---|
+| [`memory/patterns.md`](memory/patterns.md) | upstream, curated | never — runs do not write here |
+| `memory/local.md` | you, created at install | never — upstream does not ship it |
+
+Your runs write to `local.md`; both files are read before every engagement. Same
+split for `docker/packages.local.txt`, which the image installs after the shared
+list. `pwnloop ship` commits and pushes both to *your* remote after a leak
+check. If one of your entries generalises beyond your own lab, open a pull
+request moving it into `patterns.md` — that is how the shared methodology
+improves from other people's engagements and not only mine.
+
+Re-running a target is the measurement rather than a repeat: same box, changed
+methodology, and the ledger records what memory short-circuited and what stayed
+slow anyway. The second half is the useful one — a phase that is still slow
+across two runs is the next thing to fix.
+
+Four machines have produced a dozen such changes — packages that were missing
+when credential reuse, pcap analysis or PDF extraction needed them; a preset git
+identity, without which `git commit-tree` refuses and plumbing-based
+exploitation is impossible; the fact that `sed -i` cannot edit a bind-mounted
+`/etc/hosts`; and techniques promoted into references after they worked.
+
+The one worth singling out is a **deletion**. An earlier run left the rule "fix
+Kerberos skew with `ntpdate -u <dc>`". A later one proved that cannot work — the
+container has no `CAP_SYS_TIME`, so `ntpdate` measures the offset and then fails
+to apply it — and would have blocked PKINIT outright. That entry was removed and
+replaced with a `faketime` shim. A loop that only accumulates gets worse over
+time; the interesting property is that it can also take something out.
 
 That is the actual claim of this repository. Not that an agent can solve a lab
 machine — that is a demo. The claim is that the loop gets measurably better
@@ -292,6 +317,7 @@ pwnloop vpn-stop           stop the VPN
 pwnloop status             image, container, tooling and VPN summary
 pwnloop flags              show locally captured flags
 pwnloop banner             print the startup banner
+pwnloop ship [msg]         commit and push your learnings to your own remote
 ```
 
 ## Cleanup policy

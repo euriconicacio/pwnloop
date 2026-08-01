@@ -1,0 +1,7 @@
+# Your extra packages, one per line. Installed after docker/packages.txt on
+# every build, so upstream changes to that file never conflict with your list.
+#
+# A package with no build for your architecture is logged to
+# /opt/skipped-packages.txt inside the image rather than failing the build.
+#
+# Gitignored by default; `pwnloop ship` force-adds it when you push.

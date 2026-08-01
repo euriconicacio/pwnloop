@@ -49,10 +49,11 @@ before the VPN check, and its output goes to the operator verbatim:
 ~/pwnloop/bin/pwnloop banner
 ```
 
-Then read `~/pwnloop/memory/patterns.md`. It is short by design and it is what
-earlier engagements learned — checks that paid off, primitives worth trying
-early, environment gotchas. Reading it costs seconds and routinely saves a
-phase.
+Then read **both** memory files — `~/pwnloop/memory/patterns.md` (the shared,
+curated set) and `~/pwnloop/memory/local.md` (this operator's own). They are
+short by design and they are what earlier engagements learned — checks that paid
+off, primitives worth trying early, environment gotchas. Reading them costs
+seconds and routinely saves a phase.
 
 Then verify the VPN is up and the target answers. If `tun0` is down, tell the
 operator to start it (`pwnloop vpn <file.ovpn>`) — that is one of the few
@@ -83,6 +84,35 @@ legitimate blocking questions.
 8. **Announce each flag the moment you read it**, on its own line in chat, so
    the operator can paste it into the platform without waiting for you to
    finish. Do not batch flags until the end.
+
+## Re-running a target
+
+**Never write into an existing engagement directory.** If `engagements/<addr>/`
+already holds a `FINDINGS.md`, the address has been engaged before — platforms
+do recycle addresses. Create `engagements/<addr>-2/` (then `-3`) and start
+clean. Overwriting a previous ledger destroys the only record of that run.
+
+Correlate runs of the same machine by what recon *discovered* — the hostname,
+the AD domain, the certificate subject — recorded in the ledger, never by a name
+supplied up front. A re-spawn usually has a different address, so the discovered
+hostname is what ties the two together, and it costs nothing in recall terms
+because you found it rather than being told it.
+
+**A re-run is the measurement, so treat it as one.** It is the only way to test
+whether the loop actually improved: same target, methodology that has since
+changed. When the ledger's first line notes a previous run, record at the end:
+
+```markdown
+## Replay
+Previous run: engagements/<addr>/ — <time to root>, <n> PARKED, <n> DEAD
+This run:     <time to root>, <n> PARKED, <n> DEAD
+Short-circuited by memory: <entries that removed a step, or "none">
+Still slow: <what took longest despite the methodology>
+```
+
+"Still slow" is the useful half. An entry that saved time proves the loop
+learned; a phase that stayed slow across both runs is the next thing the
+methodology should fix.
 
 ## Discovery discipline
 
@@ -269,10 +299,14 @@ evidence and part of what makes the exercise worth anything.
 Before the summary, spend a moment on what this engagement should change, and
 make the changes rather than describing them:
 
-- **A pattern that generalises** → append it to `~/pwnloop/memory/patterns.md`,
+- **A pattern that generalises** → append it to `~/pwnloop/memory/local.md`,
   one line, no machine specifics, no credentials, no flags. Only if a future run
-  against a *different* box could act on it.
-- **A tool you had to install mid-run** → add it to `docker/packages.txt`.
+  against a *different* box could act on it. Write to `local.md`, never to
+  `patterns.md` — the shared file is upstream's, and editing it is what makes an
+  operator's `git pull` conflict. Promoting an entry into the shared set is a
+  pull request the operator chooses to open, not something a run decides.
+- **A tool you had to install mid-run** → add it to
+  `docker/packages.local.txt`, for the same reason.
 - **A technique that worked and is not documented** → add it to the relevant
   `references/` file.
 - **A mistake you made that a rule would have prevented** → add the rule.

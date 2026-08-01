@@ -15,6 +15,17 @@ echo "linked command-> $CLAUDE_DIR/commands/pwnloop.md"
 
 mkdir -p "$REPO/engagements" "$REPO/vpn"
 
+# Your own learnings live in files upstream never touches, so `git pull` cannot
+# conflict with what your engagements have written.
+[ -f "$REPO/memory/local.md" ] || {
+  cp "$REPO/memory/local.md.template" "$REPO/memory/local.md"
+  echo "created       -> memory/local.md (yours; upstream never edits it)"
+}
+[ -f "$REPO/docker/packages.local.txt" ] || {
+  cp "$REPO/docker/packages.local.txt.template" "$REPO/docker/packages.local.txt"
+  echo "created       -> docker/packages.local.txt"
+}
+
 # Guard against committing engagement data — see hooks/pre-commit.
 if [ -d "$REPO/.git" ]; then
   chmod +x "$REPO/hooks/pre-commit"

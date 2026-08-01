@@ -7,9 +7,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Package list is installed as one apt transaction; on failure we retry package
 # by package so a single unavailable arm64 build does not sink the whole image.
-COPY packages.txt /tmp/packages.txt
+# The glob picks up packages.local.txt when it exists and is a no-op when it
+# does not, so an operator's own list never has to be merged into ours.
+COPY packages*.txt /tmp/
 RUN apt-get update && \
-    PKGS="$(grep -vE '^\s*(#|$)' /tmp/packages.txt | tr '\n' ' ')" && \
+    PKGS="$(cat /tmp/packages.txt /tmp/packages.local.txt 2>/dev/null | grep -vE '^\s*(#|$)' | tr '\n' ' ')" && \
     (apt-get install -y --no-install-recommends $PKGS || \
      for p in $PKGS; do \
        apt-get install -y --no-install-recommends "$p" || echo "$p" >> /opt/skipped-packages.txt; \

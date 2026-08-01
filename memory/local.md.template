@@ -1,0 +1,32 @@
+# Local patterns
+
+Yours. Written by your engagements, read alongside `patterns.md` before every
+run. This file exists so that pulling upstream never conflicts with what your
+own runs have learned — upstream owns `patterns.md`, you own this one.
+
+**Same rules as `patterns.md`.** Patterns only: never flags, never credentials,
+never anything specific to one machine that a future run cannot use. If an entry
+only describes what happened on one box, it belongs in that engagement's
+`WRITEUP.md` instead.
+
+It is gitignored by default so nothing leaves your machine by accident.
+`pwnloop ship` force-adds it when you choose to push, so forks can keep their
+learnings in their own repository.
+
+**Found something that generalises beyond your lab?** Open a pull request moving
+that entry from here into `patterns.md`. That is how the shared methodology
+improves from other people's engagements and not only mine.
+
+## Recon
+
+## Credentials
+
+## Web
+
+## Privilege escalation
+
+## Active Directory
+
+## Tooling and environment
+
+## Method

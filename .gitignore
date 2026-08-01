@@ -2,6 +2,11 @@
 engagements/
 flags.local.md
 vpn/
+
+# Your own learnings. Ignored by default so nothing leaves this machine by
+# accident; `pwnloop ship` force-adds them when you choose to push to your fork.
+memory/local.md
+docker/packages.local.txt
 !vpn/.gitkeep
 *.ovpn
 *.log

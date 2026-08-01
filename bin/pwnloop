@@ -12,6 +12,7 @@
 #   pwnloop status             image, container, VPN and tooling summary
 #   pwnloop flags              show locally captured flags
 #   pwnloop banner             print the startup banner
+#   pwnloop ship [msg]         commit and push your learnings to your own remote
 set -euo pipefail
 
 LAB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -78,6 +79,42 @@ cmd_status() {
   running && cmd_x 'for t in nmap ffuf feroxbuster nxc netexec impacket-secretsdump evil-winrm sqlmap hydra john searchsploit openvpn; do printf "%-22s %s\n" "$t" "$(command -v $t || echo -)"; done; echo; ip -4 addr show tun0 2>/dev/null | grep inet || echo "tun0: down"'
 }
 
+# Commit and push what your engagements taught this clone, to your own remote.
+cmd_ship() {
+  cd "$LAB_DIR" || exit 1
+  git rev-parse --git-dir >/dev/null 2>&1 || { echo "not a git repository" >&2; exit 1; }
+  local remote; remote=$(git remote 2>/dev/null | head -1)
+  [ -n "$remote" ] || { echo "no git remote configured — fork the repo and 'git remote add origin <your-fork>'" >&2; exit 1; }
+
+  # The two files carrying your learnings are gitignored by default, so they
+  # need -f. Everything else is picked up normally.
+  git add -f memory/local.md docker/packages.local.txt 2>/dev/null || true
+  git add -A
+
+  local staged; staged=$(git diff --cached --name-only)
+  [ -n "$staged" ] || { echo "nothing to ship — no changes since the last one"; exit 0; }
+
+  echo "shipping to $remote/$(git rev-parse --abbrev-ref HEAD):"
+  echo "$staged" | sed 's/^/  /'
+
+  # Refuse engagement data outright, whatever the hook is doing.
+  if echo "$staged" | grep -qE '^engagements/|^vpn/|flags\.local\.md|\.ovpn$'; then
+    echo >&2; echo "refusing: engagement data is staged. Unstage it and check .gitignore." >&2
+    git reset -q; exit 1
+  fi
+
+  local msg="${1:-Learnings from local engagements}"
+  git commit -q -m "$msg" || { echo "commit refused — see the pre-commit output above" >&2; exit 1; }
+  git push -q "$remote" HEAD && echo && echo "pushed. $(git log --oneline -1)"
+
+  if git diff HEAD~1 --name-only 2>/dev/null | grep -q '^memory/local.md'; then
+    echo
+    echo "memory/local.md changed. If any of those entries generalise beyond your"
+    echo "own lab, open a PR moving them into memory/patterns.md — that is how the"
+    echo "shared methodology improves from other people's runs."
+  fi
+}
+
 cmd_banner() {
   local A V D R
   # Colour only for a terminal — the agent captures this output as plain text.
@@ -119,5 +156,6 @@ case "${1:-}" in
   status) cmd_status ;;
   flags) cmd_flags ;;
   banner) cmd_banner ;;
+  ship) shift; cmd_ship "$@" ;;
   *) usage ;;
 esac

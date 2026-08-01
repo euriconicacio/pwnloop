@@ -22,8 +22,32 @@ does not belong here — what belongs is what the run *changed*.
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-08-02
+
+Windows and Active Directory validated in the field, and memory split so that a
+clone's learnings and this repository stop competing for the same files.
+
 ### Added
 
+- **Split memory.** `memory/patterns.md` stays upstream's curated set;
+  `memory/local.md` is created at install and is where runs write. Same split
+  for `docker/packages.local.txt`, installed after the shared list. Neither
+  local file can conflict on `git pull`, because upstream never ships them.
+  Promoting an entry into the shared set is now a pull request — which is also
+  the first path for the methodology to improve from someone else's engagements.
+- **`pwnloop ship`** — commits and pushes your learnings to your own remote,
+  force-adding the two gitignored local files, refusing outright if engagement
+  data is staged, and pointing out entries worth upstreaming.
+- **Re-run handling.** An existing engagement directory is never written into —
+  a repeat becomes `<addr>-2`. Runs of the same machine correlate by the
+  hostname recon *discovered*, not by a name supplied up front, and a re-run
+  records a `Replay` block: what memory short-circuited, and what stayed slow
+  anyway. The second half is the part that says what to fix next.
+- **Address-only invocation.** `/pwnloop` takes an IP and nothing else, and the
+  skill will not ask what the machine is called. A well-known name returns its
+  published chain before a port has been scanned; withholding it is the one
+  control on recall an operator can enforce rather than trust. Recognition is
+  declared in the ledger whenever it fires. See *Discovery discipline*.
 - First Windows / Active Directory validation, against a retired DC. The AD
   methodology now has live-fire behind it, and the run surfaced two gotchas that
   are now documented in `references/ad.md` and `memory/patterns.md`:
@@ -96,9 +120,10 @@ machines, both Linux (one easy, one medium).
   to upstream churn, but not bit-for-bit reproducible. Pinning the base by digest
   and freezing the package snapshot is the fix when reproducibility matters.
 - At release, validated only against Linux targets. (Windows/AD validation
-  landed shortly after — see Unreleased.)
+  landed shortly after — see 1.1.0.)
 - Small sample, and no machine has defeated the loop yet — so its failure mode
   is still unobserved.
 
-[Unreleased]: https://github.com/euriconicacio/pwnloop/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/euriconicacio/pwnloop/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.1.0
 [1.0.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.0.0
