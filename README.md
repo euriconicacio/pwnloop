@@ -357,9 +357,14 @@ rather than pending:
   other side of a lab box.
 - **No mobile, blockchain, or cloud-provider assessment.** Different targets,
   different tooling, no shared loop with a single-host engagement.
-- **No write-up lookup.** Fetching someone else's solution mid-run would raise
-  the completion rate and destroy the only thing being demonstrated. If the loop
-  cannot find the path, that is the interesting result.
+- **No write-up lookup, and no acting on recall.** Fetching someone else's
+  solution mid-run would raise the completion rate and destroy the only thing
+  being demonstrated. Prior knowledge of a well-known machine is not removable,
+  so the skill handles it by rule instead: every action must trace to an artifact
+  already collected, and recognition of the target must be declared at the top of
+  the ledger. See *Discovery discipline* in `SKILL.md`. Researching a
+  technology — a CVE, a protocol, an exploit's source — is the opposite of this
+  and is expected.
 - **No log or audit tampering.** Cleanup removes the operator's artifacts and
   nothing else — see [Cleanup policy](#cleanup-policy).
 

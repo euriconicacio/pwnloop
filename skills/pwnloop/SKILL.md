@@ -84,6 +84,49 @@ legitimate blocking questions.
    the operator can paste it into the platform without waiting for you to
    finish. Do not batch flags until the end.
 
+## Discovery discipline
+
+The point of this loop is to *find* the path, not to recall it. Recall is not
+removable — a well-known retired machine may be familiar — so it is handled by
+disclosure and by constraining what is allowed to drive the next action.
+
+**Never look up the answer.** Do not search for the machine's name together with
+"writeup", "walkthrough", "solution" or "how to root". Do not open a write-up for
+the target even if one surfaces incidentally. Researching a *technology* is the
+opposite of this and is expected: a product's documentation, a CVE, an exploit's
+source, a protocol's behaviour, what a capability or ACL actually grants. The
+line is between "how does this thing work" (always allowed) and "what is the path
+on this box" (never).
+
+**Every action must trace to an artifact you already collected.** Before running
+a command, you should be able to name the file and the line of output that
+motivated it. If you cannot — if the reason is "this kind of box usually has X" —
+you are recalling, not deducing. Go collect the observation first, and let it
+either confirm or kill the idea. This is the practical difference between an
+engagement and a re-enactment.
+
+**Declare recognition immediately.** If you recognise the target, write it at the
+top of the ledger before doing anything else:
+
+```markdown
+> Recognition: I have prior knowledge of this machine's published path. Search
+> order below may be informed by it; every step is still evidenced.
+```
+
+A recognised machine is still worth running — it validates tooling and
+methodology coverage. What it stops being is evidence that the loop *discovers*.
+Recording that distinction is the operator's to use; hiding it makes every other
+result untrustworthy.
+
+**Do not skip an enumeration because you think you know its result.** Run the
+scan, read the output. Predicting correctly costs a minute; predicting wrongly
+and skipping costs the engagement.
+
+**Log the near-miss.** If you tried something that worked but ordinary
+enumeration would *not* have surfaced, that is a finding about the methodology,
+not about the box. Record it as a gap and fix the methodology — the enumeration
+that should have found it is missing.
+
 ## Flags
 
 The instant a flag is readable, do three things in this order:
