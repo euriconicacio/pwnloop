@@ -22,6 +22,14 @@ does not belong here — what belongs is what the run *changed*.
 
 ## [Unreleased]
 
+### Added
+
+- `pwnloop engagements` — lists past runs with the target each one turned out to
+  be, whether both flags fell, and when. Engagement directories are named after
+  the address, which is exact during a run and useless as an archive key months
+  later; the listing is derived from what each ledger already recorded rather
+  than from a second index file that could drift out of date.
+
 ## [1.1.0] — 2026-08-02
 
 Windows and Active Directory validated in the field, and memory split so that a

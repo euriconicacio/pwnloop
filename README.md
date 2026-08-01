@@ -316,6 +316,7 @@ pwnloop vpn-status         tun0 address and last OpenVPN log lines
 pwnloop vpn-stop           stop the VPN
 pwnloop status             image, container, tooling and VPN summary
 pwnloop flags              show locally captured flags
+pwnloop engagements        list past engagements and what each one was
 pwnloop banner             print the startup banner
 pwnloop ship [msg]         commit and push your learnings to your own remote
 ```

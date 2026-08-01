@@ -11,6 +11,7 @@
 #   pwnloop vpn-stop           kill the VPN
 #   pwnloop status             image, container, VPN and tooling summary
 #   pwnloop flags              show locally captured flags
+#   pwnloop engagements        list past engagements and what each one was
 #   pwnloop banner             print the startup banner
 #   pwnloop ship [msg]         commit and push your learnings to your own remote
 set -euo pipefail
@@ -139,6 +140,23 @@ ART
   printf '    %sautonomous lab-machine engagement loop%s\n\n' "$D" "$R"
 }
 
+# Directories are named after the address, which is precise during a run and
+# useless as an archive key months later. Derive the index from what each ledger
+# already recorded rather than maintaining a second file that can go stale.
+cmd_engagements() {
+  local d led
+  printf '%-22s %-34s %-7s %s\n' DIRECTORY TARGET FLAGS STARTED
+  for d in "$LAB_DIR"/engagements/*/; do
+    led="$d/FINDINGS.md"; [ -f "$led" ] || continue
+    local title started u r
+    title=$(head -1 "$led" | sed 's/^#\{1,\} *//')
+    started=$(grep -m1 -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' "$led" || echo '?')
+    grep -q '^- \[x\] user\.txt' "$led" && u=user || u=—
+    grep -q '^- \[x\] root\.txt' "$led" && r=root || r=—
+    printf '%-22s %-34s %-7s %s\n' "$(basename "$d")" "${title:0:34}" "$u/$r" "$started"
+  done
+}
+
 cmd_flags() {
   if [ -f "$LAB_DIR/flags.local.md" ]; then cat "$LAB_DIR/flags.local.md"
   else echo "no flags captured yet ($LAB_DIR/flags.local.md)"; fi
@@ -155,6 +173,7 @@ case "${1:-}" in
   vpn-stop) cmd_vpn_stop ;;
   status) cmd_status ;;
   flags) cmd_flags ;;
+  engagements) cmd_engagements ;;
   banner) cmd_banner ;;
   ship) shift; cmd_ship "$@" ;;
   *) usage ;;
