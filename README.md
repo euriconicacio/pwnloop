@@ -114,6 +114,7 @@ lives in `references/`, loaded on demand rather than all at once:
 | `web.md` | fuzzing strategy, LFI/SSTI/upload/SQLi/deserialization |
 | `services.md` | per-port playbooks: SMB, FTP, SNMP, LDAP, NFS, SQL, Redis, WinRM |
 | `foothold.md` | reverse shells, TTY upgrade, file transfer both directions |
+| `artifacts.md` | mining downloaded files — pcaps, archives, git history, key material |
 | `privesc-linux.md` | sudo, SUID, capabilities, cron, container escapes |
 | `privesc-windows.md` | token privileges, services, credential hunting |
 | `ad.md` | AS-REP roasting, Kerberoast, ACL abuse, DCSync, ADCS |

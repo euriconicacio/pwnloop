@@ -65,6 +65,7 @@ rpcbind
 
 # services / clients
 openssh-client
+sshpass
 ftp
 telnet
 snmp
@@ -87,6 +88,8 @@ seclists
 wordlists
 
 # analysis
+tshark
+binwalk
 exiftool
 binutils
 steghide

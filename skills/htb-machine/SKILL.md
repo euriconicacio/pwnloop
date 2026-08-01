@@ -166,6 +166,7 @@ Read these on demand, not upfront:
 - `references/web.md` — directory/vhost fuzzing, common web vulns, auth bypass
 - `references/services.md` — per-port playbooks (SMB, FTP, SSH, DNS, SNMP, LDAP, SQL, Redis, RPC, WinRM)
 - `references/foothold.md` — reverse shells, TTY upgrade, file transfer both ways
+- `references/artifacts.md` — mining recovered files (pcaps, archives, git, key material) for credentials
 - `references/privesc-linux.md` — sudo, SUID, capabilities, cron, containers
 - `references/privesc-windows.md` — tokens, services, AlwaysInstallElevated, UAC
 - `references/ad.md` — AS-REP/Kerberoast, BloodHound-less enumeration, DCSync
