@@ -17,6 +17,10 @@ Report progress by appending to `FINDINGS.md` as discoveries land, and give me
 a one-or-two-line status in chat at each phase transition — nothing longer, I am
 reading the ledger.
 
+Print each flag in chat on its own line the moment you read it, so I can submit
+it while you keep working. Clean up everything you created on the target before
+you finish, and close with the summary table.
+
 Stop and ask me only if: the VPN is down, the target has been unreachable for
 more than 5 minutes (it may need a reset on the platform), or you have run three
 complete enumeration loops with no new leads.

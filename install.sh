@@ -25,8 +25,13 @@ fi
 cat <<EOF
 
 Next:
-  1. download your HTB .ovpn and drop it in $REPO/vpn/
-  2. $REPO/bin/htb vpn <file.ovpn>
-  3. $REPO/bin/htb vpn-status
-  4. cd $REPO && claude   →  /htb <target-ip> <machine-name>
+  1. TRUST THE WORKSPACE — required, or every command prompts for permission:
+       cd $REPO && claude     (accept the dialog, then exit)
+  2. download your lab .ovpn and drop it in $REPO/vpn/
+  3. $REPO/bin/htb vpn <file.ovpn>
+  4. $REPO/bin/htb vpn-status      (expect an inet address on tun0)
+  5. cd $REPO && claude   →  /htb <target-ip> <machine-name>
+
+  The VPN runs inside the container and dies with it: after 'htb down' or a
+  rebuild, reconnect with 'htb vpn <file.ovpn>'.
 EOF
