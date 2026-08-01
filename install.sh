@@ -15,6 +15,13 @@ echo "linked command-> $CLAUDE_DIR/commands/pwnloop.md"
 
 mkdir -p "$REPO/engagements" "$REPO/vpn"
 
+# Guard against committing engagement data — see hooks/pre-commit.
+if [ -d "$REPO/.git" ]; then
+  chmod +x "$REPO/hooks/pre-commit"
+  ln -sfn "$REPO/hooks/pre-commit" "$REPO/.git/hooks/pre-commit"
+  echo "linked hook   -> $REPO/.git/hooks/pre-commit"
+fi
+
 if [ "${1:-}" != "--no-build" ]; then
   echo "building the Kali image (first run takes a few minutes)…"
   "$REPO/bin/pwnloop" build

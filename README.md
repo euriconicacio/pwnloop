@@ -398,6 +398,23 @@ it at, and only against targets you are authorized to test.
 | `sed -i` fails on `/etc/hosts` | bind-mounted file cannot be renamed | append instead of editing in place |
 | A tool is missing | not in `packages.txt`, or no build for your arch | add it and `pwnloop build`; check `/opt/skipped-packages.txt` |
 
+## Keeping engagement data out of the repository
+
+`install.sh` links `hooks/pre-commit`, which refuses a commit that contains a
+flag-shaped string, a path under `engagements/` or `vpn/`, private key material,
+or an attacker VPN address. The `.gitignore` is the first line of defence and
+this is the second, because the realistic failure is the maintainer pasting
+engagement output into a reference file — not an outsider.
+
+```bash
+git commit --no-verify     # bypass, when you are deliberately adding a placeholder
+```
+
+On the GitHub side, enable **secret scanning with push protection** (free for
+public repositories). It catches token-shaped secrets the hook does not know
+about; the hook catches flags and lab credentials that GitHub does not recognise
+as secrets. They cover different halves of the problem.
+
 ## License
 
-MIT.
+MIT — see [LICENSE](LICENSE).
