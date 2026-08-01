@@ -15,7 +15,7 @@
 set -euo pipefail
 
 LAB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-IMAGE="pwnloop-box:latest"
+IMAGE="pwnloop:latest"
 NAME="pwnloop-box"
 
 # Print the header comment block only — stop at the first non-comment line.
