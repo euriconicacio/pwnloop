@@ -72,6 +72,11 @@ The agent creates `engagements/machinename/` and works there. Open
 ledger updated as discoveries land, and it is the thing to project if you are
 demonstrating this to an audience.
 
+When both flags are captured it writes two more files without being asked:
+`REPORT.md` (the defender's view — chain, impact, remediation) and `WRITEUP.md`
+(the teaching view — the narrative including the leads that failed, flags
+redacted).
+
 ## The `htb` wrapper
 
 ```
@@ -113,7 +118,8 @@ lives in `references/`, loaded on demand rather than all at once:
 | `privesc-windows.md` | token privileges, services, credential hunting |
 | `ad.md` | AS-REP roasting, Kerberoast, ACL abuse, DCSync, ADCS |
 | `pivoting.md` | chisel, SSH tunnels, proxychains |
-| `reporting.md` | chain-first report structure |
+| `reporting.md` | chain-first, defender-facing report structure |
+| `writeup.md` | publishable write-up structure, including redaction rules |
 
 The design choices that matter for autonomy: **never stop between phases**,
 **parallelize scans instead of waiting**, **time-box any lead to ~15 minutes**

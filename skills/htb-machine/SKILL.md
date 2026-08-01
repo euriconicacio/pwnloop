@@ -133,10 +133,19 @@ Work the enumeration output, not a blind exploit list. Prefer misconfiguration
 kernel exploits — labs rarely intend a kernel exploit and it often breaks the
 box. Read `root.txt`.
 
-### 6. Report
-When both flags are captured, write `REPORT.md` next to the ledger: the attack
-chain as a numbered path, each step with its evidence file, plus the remediation
-that would have broken the chain at each link. See `references/reporting.md`.
+### 6. Report and write-up
+When both flags are captured, produce **two** documents next to the ledger —
+they have different audiences and must not be merged:
+
+- `REPORT.md` — the defender's document: attack chain as a numbered path, each
+  step with its evidence file, findings with impact and remediation, and the
+  single control that would have broken the chain earliest.
+  See `references/reporting.md`.
+- `WRITEUP.md` — the teaching document: the narrative of how the box fell,
+  including the leads that failed and why. Flags redacted; publishable only if
+  the machine is confirmed retired. See `references/writeup.md`.
+
+Write both without being asked. The engagement is not finished at `root.txt`.
 
 ## Common failure modes on lab boxes
 
@@ -161,4 +170,5 @@ Read these on demand, not upfront:
 - `references/privesc-windows.md` — tokens, services, AlwaysInstallElevated, UAC
 - `references/ad.md` — AS-REP/Kerberoast, BloodHound-less enumeration, DCSync
 - `references/pivoting.md` — chisel, ssh tunnels, proxychains
-- `references/reporting.md` — final report structure
+- `references/reporting.md` — defender-facing report structure
+- `references/writeup.md` — publishable write-up structure and redaction rules
