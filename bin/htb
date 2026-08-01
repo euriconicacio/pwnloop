@@ -10,13 +10,15 @@
 #   htb vpn-status         show tun0 / HTB reachability
 #   htb vpn-stop           kill the VPN
 #   htb status             image, container, VPN and tooling summary
+#   htb flags              show locally captured flags
 set -euo pipefail
 
 LAB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE="htb-kali:latest"
 NAME="htb-kali"
 
-usage() { sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+# Print the header comment block only — stop at the first non-comment line.
+usage() { awk 'NR>1 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"; }
 
 # `docker inspect` also matches images, so always scope these to containers.
 running() { [ "$(docker container inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null || echo false)" = "true" ]; }
@@ -75,6 +77,11 @@ cmd_status() {
   running && cmd_x 'for t in nmap ffuf feroxbuster nxc netexec impacket-secretsdump evil-winrm sqlmap hydra john searchsploit openvpn; do printf "%-22s %s\n" "$t" "$(command -v $t || echo -)"; done; echo; ip -4 addr show tun0 2>/dev/null | grep inet || echo "tun0: down"'
 }
 
+cmd_flags() {
+  if [ -f "$LAB_DIR/flags.local.md" ]; then cat "$LAB_DIR/flags.local.md"
+  else echo "no flags captured yet ($LAB_DIR/flags.local.md)"; fi
+}
+
 case "${1:-}" in
   build) shift; cmd_build "$@" ;;
   up) shift; cmd_up "$@" ;;
@@ -85,5 +92,6 @@ case "${1:-}" in
   vpn-status) cmd_vpn_status ;;
   vpn-stop) cmd_vpn_stop ;;
   status) cmd_status ;;
+  flags) cmd_flags ;;
   *) usage ;;
 esac

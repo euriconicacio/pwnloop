@@ -68,6 +68,28 @@ few legitimate blocking questions.
 7. **Come back to the operator only for:** VPN down, target unreachable for
    >5 min (machine may need a reset), a genuine scope question, or three full
    loops with zero new leads. Everything else you decide yourself.
+8. **Announce each flag the moment you read it**, on its own line in chat, so
+   the operator can paste it into the platform without waiting for you to
+   finish. Do not batch flags until the end.
+
+## Flags
+
+The instant a flag is readable, do three things in this order:
+
+1. Print it in chat, alone and unadorned, so it can be copied:
+   `user.txt — 0123456789abcdef0123456789abcdef`
+2. Append it to `~/htb-lab/flags.local.md`, which is gitignored and never
+   leaves the machine:
+
+   ```bash
+   echo "| <machine> | <ip> | user.txt | <value> | $(date -u '+%Y-%m-%d %H:%M') |" \
+     >> ~/htb-lab/flags.local.md
+   ```
+3. Tick the matching line in the ledger's **Access** block.
+
+Flag values belong in `flags.local.md`, in the engagement directory, and in
+chat — never in anything tracked by git. Before writing an example into a
+reference file or any committed document, replace it with `<32-hex-flag>`.
 
 ## Findings ledger
 
@@ -146,6 +168,47 @@ they have different audiences and must not be merged:
   the machine is confirmed retired. See `references/writeup.md`.
 
 Write both without being asked. The engagement is not finished at `root.txt`.
+
+### 7. Clean up the target
+Standard practice, not an optional courtesy — do it without being asked, right
+after the documents are written and before the closing summary.
+
+Every engagement leaves artifacts. Track them in the ledger as you create them
+under an **Artifacts left on the target** heading, then remove them:
+
+- web shells and uploaded files
+- SSH keys you planted in any `authorized_keys`
+- accounts, repositories, API tokens or scheduled jobs you created
+- staging directories and any file you wrote outside `/tmp`
+
+Remove them in reverse order of creation, using the highest privilege you
+obtained, and verify each removal rather than assuming it worked. Keep the
+private half of any key you generated in `loot/` — it is evidence — but delete
+the public half from the target.
+
+Two exceptions, both of which you state explicitly rather than deciding
+silently: leave an artifact in place if removing it would break the machine for
+the operator, and leave it if the operator has said they want to re-run the
+chain. In both cases list what remains and the exact command to remove it later.
+
+Never "clean up" by deleting logs or audit records. You are removing your own
+artifacts, not covering tracks — a lab engagement's logs are the defender's
+evidence and part of what makes the exercise worth anything.
+
+### 8. Close out
+End with a compact summary table in chat — this is what the operator reads
+when they come back to the terminal:
+
+```markdown
+| machine | ip | time to root | user.txt | root.txt |
+|---------|-----|--------------|----------|----------|
+| <name> | 10.129.x.x | 12 min | <32-hex-flag> | <32-hex-flag> |
+```
+
+Show flag values in full in this table — the operator is pasting them into the
+platform. Follow it with one line naming the escalation vector, one line stating
+what was cleaned up, and the paths to `FINDINGS.md`, `REPORT.md` and
+`WRITEUP.md`. Nothing longer; the documents carry the detail.
 
 ## Common failure modes on lab boxes
 

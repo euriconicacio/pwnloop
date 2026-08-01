@@ -1,5 +1,6 @@
-# Engagement data and VPN credentials never belong in the repository.
+# Engagement data, flags and VPN credentials never belong in the repository.
 engagements/
+flags.local.md
 vpn/
 !vpn/.gitkeep
 *.ovpn
