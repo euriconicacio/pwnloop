@@ -2,16 +2,16 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [
-      "Bash(./bin/htb:*)",
-      "Bash(bin/htb:*)",
-      "Bash(~/htb-lab/bin/htb:*)",
-      "Bash($HOME/htb-lab/bin/htb:*)",
+      "Bash(./bin/pwnloop:*)",
+      "Bash(bin/pwnloop:*)",
+      "Bash(~/pwnloop/bin/pwnloop:*)",
+      "Bash($HOME/pwnloop/bin/pwnloop:*)",
       "Bash(docker exec:*)",
-      "Bash(docker start htb-kali)",
+      "Bash(docker start pwnloop-box)",
       "Bash(docker ps:*)",
-      "Read(//Users/*/htb-lab/**)",
-      "Write(//Users/*/htb-lab/engagements/**)",
-      "Edit(//Users/*/htb-lab/engagements/**)"
+      "Read(//Users/*/pwnloop/**)",
+      "Write(//Users/*/pwnloop/engagements/**)",
+      "Edit(//Users/*/pwnloop/engagements/**)"
     ],
     "deny": [
       "Bash(docker rm:*)",

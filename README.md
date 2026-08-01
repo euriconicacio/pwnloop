@@ -1,9 +1,35 @@
-# htb-lab
+```
+                                 dP
+                                 88
+    88d888b. dP  dP  dP 88d888b. 88 .d8888b. .d8888b. 88d888b.
+    88'  `88 88  88  88 88'  `88 88 88'  `88 88'  `88 88'  `88
+    88.  .88 88.88b.88' 88    88 88 88.  .88 88.  .88 88.  .88
+    88Y888P' 8888P Y8P  dP    dP dP `88888P' `88888P' 88Y888P'
+    88                                                88
+    dP                                                dP
+
+    v1.0 by Eurico Nicacio (h3llh0und)
+    autonomous lab-machine engagement loop
+```
 
 An autonomous lab-machine engagement kit for Claude Code: a disposable Kali
 container, a skill that drives it, and a slash command that turns "here is an
 IP" into a full recon → foothold → privilege-escalation → cleanup → report run
 you can watch happen.
+
+```
+> /pwnloop 10.129.50.240 cap
+
+  [recon]    3 ports — 21 vsftpd 3.0.3, 22 OpenSSH 8.2p1, 80 Gunicorn
+  [web]      /capture → 302 /data/1 — sequential id, no ownership check
+  [web]      /data/0 belongs to another user. IDOR confirmed
+  [analysis] pcap holds a cleartext FTP login
+  [foothold] password reused on SSH
+             user.txt — <32-hex-flag>
+  [privesc]  cap_setuid on /usr/bin/python3.8
+             root.txt — <32-hex-flag>
+  [cleanup]  1 artifact removed, verified
+```
 
 > **Authorized targets only.** This is built for Hack The Box, TryHackMe and
 > similar training platforms, and for lab environments you own. The skill
@@ -16,6 +42,7 @@ you can watch happen.
 
 ## Contents
 
+- [Loop engineering](#loop-engineering)
 - [Requirements](#requirements)
 - [Install](#install)
 - [VPN](#vpn)
@@ -29,6 +56,42 @@ you can watch happen.
 - [Troubleshooting](#troubleshooting)
 
 ---
+
+## Loop engineering
+
+An agent is a loop: observe, decide, act, verify, repeat. In practice most
+agent failures are not model failures — they are **loop** failures. The loop
+does not terminate, or it terminates too early. It re-derives what it already
+knew because nothing was written down. It cycles through the same three ideas
+because nothing records that an idea was already ruled out. It acts on state it
+inferred rather than state it observed.
+
+So `skills/pwnloop/SKILL.md` is not written as a prompt. It is written as a
+control structure, and every rule in it exists to make the loop converge:
+
+| loop property | how it is enforced |
+|---|---|
+| **State** | `FINDINGS.md` is an append-only ledger and the engagement directory holds every artifact. The loop reads its own state instead of reconstructing it, and a run survives a context reset. |
+| **Termination** | The run ends at both flags **plus** cleanup verified **plus** report and write-up written — not at `root.txt`. An underspecified end condition is why agents stop three steps early. |
+| **Divergence guard** | Any lead that has produced no concrete artifact in ~15 minutes is marked `PARKED` and the loop moves on. Without this the agent will spend an hour on the most *interesting* lead rather than the most *productive* one. |
+| **Cycle prevention** | The status lattice is `LEAD → CONFIRMED / PARKED / DEAD`. `DEAD` carries the reason it was ruled out, which is what stops the loop re-testing it on the next pass. |
+| **Grounding invariant** | No finding without an evidence file. This is the rule that keeps the loop operating on observed state rather than plausible state — the single highest-value constraint in the whole document. |
+| **Concurrency** | Full-port, UDP and web scans run at once rather than in sequence, so wall-clock is bounded by the slowest branch, not their sum. |
+| **Escalation predicate** | Exactly four conditions return control to the human: VPN down, target unreachable >5 min, a scope question, or three passes with no new leads. Everything else the loop decides. Broad escalation criteria are how "autonomous" degrades into a chat session. |
+
+The second loop is the one around the first. Every engagement is expected to
+change the methodology: a missing tool becomes a package, a technique that
+worked becomes a reference section, a mistake becomes a rule. Two machines
+produced six such changes — `sshpass` and `tshark` (missing when credential
+reuse and pcap analysis needed them), `bsdextrautils` (its absence silently
+breaks `searchsploit -m`), a preset git identity (without it `git commit-tree`
+refuses, which blocks plumbing-based exploitation entirely), the fact that
+`sed -i` cannot edit a bind-mounted `/etc/hosts`, and the `os.path.join`
+containment bug that produced root on the second box.
+
+That is the actual claim of this repository. Not that an agent can solve a lab
+machine — that is a demo. The claim is that the loop gets measurably better
+every time it runs, because the run is required to write back into it.
 
 ## Requirements
 
@@ -51,19 +114,19 @@ container down and every trace of the engagement's tooling goes with it.
 ## Install
 
 ```bash
-git clone <this-repo> ~/htb-lab
-cd ~/htb-lab
+git clone <this-repo> ~/pwnloop
+cd ~/pwnloop
 ./install.sh
 ```
 
-`install.sh` symlinks `skills/htb-machine` into `~/.claude/skills/` and
-`commands/htb.md` into `~/.claude/commands/`, then builds and starts the
+`install.sh` symlinks `skills/pwnloop` into `~/.claude/skills/` and
+`commands/pwnloop.md` into `~/.claude/commands/`, then builds and starts the
 container. Use `./install.sh --no-build` to link only.
 
 **Then trust the directory once — this step is not optional:**
 
 ```bash
-cd ~/htb-lab && claude      # accept the trust dialog, then exit
+cd ~/pwnloop && claude      # accept the trust dialog, then exit
 ```
 
 Until you do, Claude Code ignores `.claude/settings.json` and prompts for
@@ -78,7 +141,7 @@ this workspace has not been trusted.
 Verify the whole setup:
 
 ```bash
-./bin/htb status
+./bin/pwnloop status
 ```
 
 ## VPN
@@ -92,17 +155,17 @@ Download the OpenVPN profile from your platform (on HTB: *Connect to HTB* →
 *Machines* → *OpenVPN* → download `.ovpn`), then:
 
 ```bash
-cp ~/Downloads/lab_yourname.ovpn ~/htb-lab/vpn/
-~/htb-lab/bin/htb vpn lab_yourname.ovpn
+cp ~/Downloads/lab_yourname.ovpn ~/pwnloop/vpn/
+~/pwnloop/bin/pwnloop vpn lab_yourname.ovpn
 ```
 
-The profile must be inside `~/htb-lab/vpn/` — that directory is mounted
+The profile must be inside `~/pwnloop/vpn/` — that directory is mounted
 read-only into the container at `/vpn`, and it is gitignored.
 
 ### Verify
 
 ```bash
-~/htb-lab/bin/htb vpn-status
+~/pwnloop/bin/pwnloop vpn-status
 ```
 
 A working connection shows a `tun0` address in the lab range and
@@ -122,7 +185,7 @@ payloads by hand.
 ### Disconnect
 
 ```bash
-~/htb-lab/bin/htb vpn-stop
+~/pwnloop/bin/pwnloop vpn-stop
 ```
 
 ### Switch server or profile
@@ -131,19 +194,19 @@ Stop the current connection first — two OpenVPN processes will fight over the
 routing table:
 
 ```bash
-~/htb-lab/bin/htb vpn-stop
-cp ~/Downloads/lab_other-server.ovpn ~/htb-lab/vpn/
-~/htb-lab/bin/htb vpn lab_other-server.ovpn
+~/pwnloop/bin/pwnloop vpn-stop
+cp ~/Downloads/lab_other-server.ovpn ~/pwnloop/vpn/
+~/pwnloop/bin/pwnloop vpn lab_other-server.ovpn
 ```
 
 ### Important: the VPN dies with the container
 
-`htb down`, `htb build` followed by a container recreate, or a Docker restart
+`pwnloop down`, `pwnloop build` followed by a container recreate, or a Docker restart
 all kill the connection. Reconnect afterwards:
 
 ```bash
-~/htb-lab/bin/htb down && ~/htb-lab/bin/htb up
-~/htb-lab/bin/htb vpn lab_yourname.ovpn
+~/pwnloop/bin/pwnloop down && ~/pwnloop/bin/pwnloop up
+~/pwnloop/bin/pwnloop vpn lab_yourname.ovpn
 ```
 
 ## Running an engagement
@@ -151,8 +214,8 @@ all kill the connection. Reconnect afterwards:
 Spawn the machine on the platform, then:
 
 ```bash
-cd ~/htb-lab && claude
-> /htb 10.129.50.240 cap
+cd ~/pwnloop && claude
+> /pwnloop 10.129.50.240 cap
 ```
 
 The agent verifies the VPN and reachability, creates
@@ -164,7 +227,7 @@ To watch the run rather than the transcript, tail the ledger in another window �
 this is also what to project if you are demonstrating to an audience:
 
 ```bash
-tail -f ~/htb-lab/engagements/cap/FINDINGS.md
+tail -f ~/pwnloop/engagements/cap/FINDINGS.md
 ```
 
 It will come back to you only for: VPN down, target unreachable for more than
@@ -194,22 +257,23 @@ reader: how the box fell, and — the part most write-ups omit — which leads w
 dead ends and why. Merging them serves neither audience.
 
 ```bash
-~/htb-lab/bin/htb flags     # all captured flags, newest engagement last
+~/pwnloop/bin/pwnloop flags     # all captured flags, newest engagement last
 ```
 
 ## Command reference
 
 ```
-htb build              rebuild the image
-htb up                 create/start the container
-htb down               stop and remove the container (kills the VPN)
-htb sh                 interactive shell inside the container
-htb x '<cmd>'          run one command inside the container
-htb vpn <file.ovpn>    start OpenVPN inside the container
-htb vpn-status         tun0 address and last OpenVPN log lines
-htb vpn-stop           stop the VPN
-htb status             image, container, tooling and VPN summary
-htb flags              show locally captured flags
+pwnloop build              rebuild the image
+pwnloop up                 create/start the container
+pwnloop down               stop and remove the container (kills the VPN)
+pwnloop sh                 interactive shell inside the container
+pwnloop x '<cmd>'          run one command inside the container
+pwnloop vpn <file.ovpn>    start OpenVPN inside the container
+pwnloop vpn-status         tun0 address and last OpenVPN log lines
+pwnloop vpn-stop           stop the VPN
+pwnloop status             image, container, tooling and VPN summary
+pwnloop flags              show locally captured flags
+pwnloop banner             print the startup banner
 ```
 
 ## Cleanup policy
@@ -235,13 +299,13 @@ remove it later.
 rockyou, plus `linpeas` / `winPEAS` / `pspy` staged under `/opt/static` for
 delivery to targets.
 
-Adding tooling: edit `docker/packages.txt`, then `htb build`. A package with no
+Adding tooling: edit `docker/packages.txt`, then `pwnloop build`. A package with no
 build for your architecture is logged to `/opt/skipped-packages.txt` inside the
 image rather than failing the build — check it after a rebuild.
 
 ## The skill
 
-`skills/htb-machine/SKILL.md` defines the operating contract: scope checks,
+`skills/pwnloop/SKILL.md` defines the operating contract: scope checks,
 autonomy rules, flag handling, the findings-ledger format, the engagement loop,
 and the cleanup and close-out steps. Methodology lives in `references/`, loaded
 on demand rather than all at once:
@@ -289,13 +353,13 @@ it at, and only against targets you are authorized to test.
 
 | symptom | cause | fix |
 |---------|-------|-----|
-| Permission prompt on every command | workspace not trusted | `cd ~/htb-lab && claude`, accept the dialog |
-| `tun0: down` after a rebuild | the VPN lives in the container | `htb vpn <file.ovpn>` again |
+| Permission prompt on every command | workspace not trusted | `cd ~/pwnloop && claude`, accept the dialog |
+| `tun0: down` after a rebuild | the VPN lives in the container | `pwnloop vpn <file.ovpn>` again |
 | Target unreachable, VPN up | machine not spawned, or expired | re-spawn it on the platform |
 | Web app 302s everything | vhost gating | add the hostname to the container's `/etc/hosts`, then fuzz `Host:` for more |
-| Reverse shell never connects | payload points at the container IP | use the `tun0` address: `htb x "ip -4 addr show tun0"` |
+| Reverse shell never connects | payload points at the container IP | use the `tun0` address: `pwnloop x "ip -4 addr show tun0"` |
 | `sed -i` fails on `/etc/hosts` | bind-mounted file cannot be renamed | append instead of editing in place |
-| A tool is missing | not in `packages.txt`, or no build for your arch | add it and `htb build`; check `/opt/skipped-packages.txt` |
+| A tool is missing | not in `packages.txt`, or no build for your arch | add it and `pwnloop build`; check `/opt/skipped-packages.txt` |
 
 ## License
 

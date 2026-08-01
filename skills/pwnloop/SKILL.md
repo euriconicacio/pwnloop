@@ -1,6 +1,6 @@
 ---
-name: htb-machine
-description: Autonomously compromise a Hack The Box machine (or equivalent authorized lab target) end to end — recon, service enumeration, foothold, user flag, privilege escalation, root flag — driving Kali tooling inside the local htb-kali container and keeping a live findings ledger. Use whenever the user gives a lab target IP/hostname and asks to enumerate, exploit, "solve", "own", "root" or pentest it, or mentions HTB / Hack The Box / TryHackMe / a retired machine.
+name: pwnloop
+description: Autonomously compromise a Hack The Box machine (or equivalent authorized lab target) end to end — recon, service enumeration, foothold, user flag, privilege escalation, root flag — driving Kali tooling inside the local pwnloop-box container and keeping a live findings ledger. Use whenever the user gives a lab target IP/hostname and asks to enumerate, exploit, "solve", "own", "root" or pentest it, or mentions HTB / Hack The Box / TryHackMe / a retired machine.
 ---
 
 # HTB machine — autonomous engagement
@@ -23,15 +23,15 @@ pivoting to hosts the operator did not name, no exfiltration anywhere.
 
 ## Execution environment
 
-All offensive tooling lives in the `htb-kali` container, never on the macOS host.
+All offensive tooling lives in the `pwnloop-box` container, never on the macOS host.
 
 ```bash
-~/htb-lab/bin/htb x '<command>'      # run inside the container
-~/htb-lab/bin/htb vpn-status         # tun0 + HTB reachability
+~/pwnloop/bin/pwnloop x '<command>'      # run inside the container
+~/pwnloop/bin/pwnloop vpn-status         # tun0 + HTB reachability
 ```
 
 Working directory for the engagement, inside the container and mirrored on the
-host at `~/htb-lab/engagements/<name>/`:
+host at `~/pwnloop/engagements/<name>/`:
 
 ```
 /engagements/<name>/
@@ -42,9 +42,16 @@ host at `~/htb-lab/engagements/<name>/`:
   www/           payloads staged for delivery to the target
 ```
 
-Before anything else, verify the VPN is up and the target answers. If `tun0` is
-down, tell the operator to start it (`htb vpn <file.ovpn>`) — that is one of the
-few legitimate blocking questions.
+**Open every engagement with the banner** — it is the first command you run,
+before the VPN check, and its output goes to the operator verbatim:
+
+```bash
+~/pwnloop/bin/pwnloop banner
+```
+
+Then verify the VPN is up and the target answers. If `tun0` is down, tell the
+operator to start it (`pwnloop vpn <file.ovpn>`) — that is one of the few
+legitimate blocking questions.
 
 ## Autonomy rules
 
@@ -78,12 +85,12 @@ The instant a flag is readable, do three things in this order:
 
 1. Print it in chat, alone and unadorned, so it can be copied:
    `user.txt — 0123456789abcdef0123456789abcdef`
-2. Append it to `~/htb-lab/flags.local.md`, which is gitignored and never
+2. Append it to `~/pwnloop/flags.local.md`, which is gitignored and never
    leaves the machine:
 
    ```bash
    echo "| <machine> | <ip> | user.txt | <value> | $(date -u '+%Y-%m-%d %H:%M') |" \
-     >> ~/htb-lab/flags.local.md
+     >> ~/pwnloop/flags.local.md
    ```
 3. Tick the matching line in the ledger's **Access** block.
 
@@ -216,7 +223,7 @@ what was cleaned up, and the paths to `FINDINGS.md`, `REPORT.md` and
   to re-spawn, do not spend twenty minutes debugging your tooling.
 - Web app 302s everything → you are missing a vhost or a `Host:` header.
 - Exploit PoC "does not work" → check the reverse-shell IP is your `tun0`
-  address, not the container's Docker IP. `htb x "ip -4 addr show tun0"`.
+  address, not the container's Docker IP. `pwnloop x "ip -4 addr show tun0"`.
 - Reverse shell dies instantly → the payload needs URL-encoding, or the target
   has no `bash`. Try `sh`, `nc -e`, `mkfifo`, or a Python one-liner.
 - Everything filtered → the machine may not be started on the HTB panel.
