@@ -67,6 +67,7 @@ rpcbind
 # services / clients
 openssh-client
 sshpass
+swaks
 ftp
 telnet
 snmp
@@ -78,8 +79,11 @@ postgresql-client
 # credentials
 hydra
 john
+hashcat
 hashid
 hash-identifier
+cewl
+responder
 
 # exploit research
 exploitdb
@@ -92,5 +96,7 @@ wordlists
 tshark
 binwalk
 exiftool
+gdb
+python3-pwntools
 binutils
 steghide

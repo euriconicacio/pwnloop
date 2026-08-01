@@ -34,8 +34,10 @@ RUN gunzip -k /usr/share/wordlists/rockyou.txt.gz 2>/dev/null || true
 
 # Python tooling that is not packaged (or is stale) in Kali.
 ENV PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin
-RUN pipx install certipy-ad || echo "certipy-ad" >> /opt/skipped-packages.txt ; \
-    pipx install bloodhound || echo "bloodhound-python" >> /opt/skipped-packages.txt
+RUN pipx install certipy-ad     || echo "certipy-ad"      >> /opt/skipped-packages.txt ; \
+    pipx install bloodhound     || echo "bloodhound-python" >> /opt/skipped-packages.txt ; \
+    pipx install git-dumper     || echo "git-dumper"      >> /opt/skipped-packages.txt ; \
+    pipx install ldapdomaindump || echo "ldapdomaindump"  >> /opt/skipped-packages.txt
 
 RUN mkdir -p /engagements /vpn && \
     ln -sf /usr/share/seclists /opt/seclists 2>/dev/null || true

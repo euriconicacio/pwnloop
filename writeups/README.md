@@ -1,0 +1,37 @@
+# Write-ups
+
+Published versions of engagement write-ups, produced by `pwnloop` and then put
+through the redaction step described in
+[`skills/pwnloop/references/writeup.md`](../skills/pwnloop/references/writeup.md).
+
+| machine | platform | OS | chain |
+|---------|----------|----|-------|
+| [Cap](cap.md) | Hack The Box (retired) | Linux | IDOR → pcap → cleartext FTP credential → password reuse → `cap_setuid` on the system Python |
+| [Nexus](nexus.md) | Hack The Box (retired) | Linux | vhost fuzzing → secret in git history → credential reuse → CVE-2026-38526 upload RCE → production `.env` → path traversal in a root-run sync job |
+
+## What is redacted, and what is not
+
+Redacted, because these are properties of *my engagement*:
+
+- **flag values** — replaced with `<user flag redacted>` / `<root flag redacted>`.
+  Platform rules treat flag sharing as a violation regardless of a machine's
+  status. The surrounding commands and output are kept so the chain still reads.
+- **machine IPs** — generalised to `10.129.x.x`; they are ephemeral per-spawn.
+- **attacker VPN address** — generalised to `10.10.14.x`.
+
+Not redacted, because these are properties of *the machine* and appear in every
+public write-up of it:
+
+- service versions, hostnames and virtual hosts
+- the vulnerabilities themselves, and the exact requests that trigger them
+- credentials planted on the box by its author
+
+## Publication rule
+
+A write-up is publishable only for content confirmed **retired**. "Expired" is
+not "retired" — an expired machine has merely stopped counting toward seasonal
+points and may still be active. Both machines above were verified retired before
+these files were committed.
+
+The unredacted originals stay in `engagements/<machine>/WRITEUP.md`, which is
+gitignored.

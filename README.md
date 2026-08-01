@@ -52,6 +52,7 @@ you can watch happen.
 - [Cleanup policy](#cleanup-policy)
 - [What is in the container](#what-is-in-the-container)
 - [The skill](#the-skill)
+- [What this is not](#what-this-is-not)
 - [Platform rules](#platform-rules)
 - [Troubleshooting](#troubleshooting)
 
@@ -79,10 +80,15 @@ control structure, and every rule in it exists to make the loop converge:
 | **Concurrency** | Full-port, UDP and web scans run at once rather than in sequence, so wall-clock is bounded by the slowest branch, not their sum. |
 | **Escalation predicate** | Exactly four conditions return control to the human: VPN down, target unreachable >5 min, a scope question, or three passes with no new leads. Everything else the loop decides. Broad escalation criteria are how "autonomous" degrades into a chat session. |
 
-The second loop is the one around the first. Every engagement is expected to
-change the methodology: a missing tool becomes a package, a technique that
-worked becomes a reference section, a mistake becomes a rule. Two machines
-produced six such changes — `sshpass` and `tshark` (missing when credential
+The second loop is the one around the first. Every engagement is required to
+change the methodology before it closes out: a pattern that generalises is
+appended to [`memory/patterns.md`](memory/patterns.md) — which the *next*
+engagement reads before it starts — a missing tool becomes a package, a
+technique becomes a reference section, a mistake becomes a rule. That file is
+deliberately short and holds no machine specifics, no credentials and no flags;
+an entry earns its place only if a run against a different box could act on it.
+
+Two machines produced six such changes — `sshpass` and `tshark` (missing when credential
 reuse and pcap analysis needed them), `bsdextrautils` (its absence silently
 breaks `searchsploit -m`), a preset git identity (without it `git commit-tree`
 refuses, which blocks plumbing-based exploitation entirely), the fact that
@@ -250,6 +256,11 @@ flags.local.md   every flag captured, across all machines — gitignored
 `engagements/`, `flags.local.md` and `vpn/` are gitignored and must stay that
 way. Flag values never enter version control.
 
+Two directories in the repository are written *by* engagements rather than for
+them: [`memory/patterns.md`](memory/patterns.md), the cross-engagement pattern
+file the next run reads first, and [`writeups/`](writeups/), publication-ready
+copies that have been through the redaction step.
+
 `REPORT.md` and `WRITEUP.md` are deliberately separate documents. The report
 argues to a defender: what is broken, what it costs, what to fix, and which
 single control would have broken the chain earliest. The write-up teaches a
@@ -294,10 +305,11 @@ remove it later.
 `nmap`, `masscan`, `ffuf`, `feroxbuster`, `gobuster`, `nikto`, `whatweb`,
 `wfuzz`, `sqlmap`, `wpscan`, `netexec`, `smbclient`, `smbmap`, `enum4linux-ng`,
 `impacket-scripts`, `evil-winrm`, `certipy`, `bloodhound-python`, `ldap-utils`,
-`krb5-user`, `hydra`, `john`, `sshpass`, `searchsploit`, `tshark`, `tcpdump`,
-`binwalk`, `exiftool`, `proxychains4`, `chisel`, SecLists and an uncompressed
-rockyou, plus `linpeas` / `winPEAS` / `pspy` staged under `/opt/static` for
-delivery to targets.
+`krb5-user`, `hydra`, `john`, `hashcat`, `cewl`, `responder`, `sshpass`, `swaks`,
+`searchsploit`, `git-dumper`, `ldapdomaindump`, `tshark`, `tcpdump`, `binwalk`,
+`exiftool`, `gdb`, `pwntools`, `proxychains4`, `chisel`, SecLists and an
+uncompressed rockyou, plus `linpeas` / `winPEAS` / `pspy` staged under
+`/opt/static` for delivery to targets.
 
 Adding tooling: edit `docker/packages.txt`, then `pwnloop build`. A package with no
 build for your architecture is logged to `/opt/skipped-packages.txt` inside the
@@ -314,6 +326,9 @@ on demand rather than all at once:
 |------|--------|
 | `recon.md` | layered scanning, vhost/hostname handling, port triage |
 | `web.md` | fuzzing strategy, LFI/SSTI/upload/SQLi/deserialization |
+| `api.md` | REST/GraphQL discovery, JWT attacks, IDOR, race conditions, SSRF |
+| `source-review.md` | reading recovered source: secrets in history, sinks, authorization gaps |
+| `cracking.md` | hash identification, john/hashcat formats, spraying strategy |
 | `services.md` | per-port playbooks: SMB, FTP, SNMP, LDAP, NFS, SQL, Redis, WinRM |
 | `foothold.md` | reverse shells, TTY upgrade, file transfer both directions |
 | `artifacts.md` | mining downloaded files — pcaps, archives, git history, key material |
@@ -329,6 +344,28 @@ The design choices that matter for autonomy: **never stop between phases**,
 before parking it, and **every finding needs an evidence file**. Without the
 time-box the agent spends an hour on a promising-looking dead end; without the
 evidence rule it reports things it merely inferred.
+
+## What this is not
+
+Scope discipline is what keeps this useful, so the exclusions are deliberate
+rather than pending:
+
+- **No command-and-control, EDR evasion, or malware development.** Lab machines
+  do not require them, and a repository that ships them is a different kind of
+  artifact with a different set of obligations.
+- **No phishing or social-engineering infrastructure.** There is no human on the
+  other side of a lab box.
+- **No mobile, blockchain, or cloud-provider assessment.** Different targets,
+  different tooling, no shared loop with a single-host engagement.
+- **No write-up lookup.** Fetching someone else's solution mid-run would raise
+  the completion rate and destroy the only thing being demonstrated. If the loop
+  cannot find the path, that is the interesting result.
+- **No log or audit tampering.** Cleanup removes the operator's artifacts and
+  nothing else — see [Cleanup policy](#cleanup-policy).
+
+Other Claude Code security repositories cover several of these well and at much
+greater breadth; `pwnloop` is deliberately one workflow done thoroughly rather
+than thirty covered thinly.
 
 ## Platform rules
 

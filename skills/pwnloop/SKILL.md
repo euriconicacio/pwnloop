@@ -49,6 +49,11 @@ before the VPN check, and its output goes to the operator verbatim:
 ~/pwnloop/bin/pwnloop banner
 ```
 
+Then read `~/pwnloop/memory/patterns.md`. It is short by design and it is what
+earlier engagements learned — checks that paid off, primitives worth trying
+early, environment gotchas. Reading it costs seconds and routinely saves a
+phase.
+
 Then verify the VPN is up and the target answers. If `tun0` is down, tell the
 operator to start it (`pwnloop vpn <file.ovpn>`) — that is one of the few
 legitimate blocking questions.
@@ -202,7 +207,22 @@ Never "clean up" by deleting logs or audit records. You are removing your own
 artifacts, not covering tracks — a lab engagement's logs are the defender's
 evidence and part of what makes the exercise worth anything.
 
-### 8. Close out
+### 8. Write back into the loop
+Before the summary, spend a moment on what this engagement should change, and
+make the changes rather than describing them:
+
+- **A pattern that generalises** → append it to `~/pwnloop/memory/patterns.md`,
+  one line, no machine specifics, no credentials, no flags. Only if a future run
+  against a *different* box could act on it.
+- **A tool you had to install mid-run** → add it to `docker/packages.txt`.
+- **A technique that worked and is not documented** → add it to the relevant
+  `references/` file.
+- **A mistake you made that a rule would have prevented** → add the rule.
+
+Nothing to add is a legitimate outcome; say so rather than inventing an entry.
+A memory file padded with restatements of the obvious costs every future run.
+
+### 9. Close out
 End with a compact summary table in chat — this is what the operator reads
 when they come back to the terminal:
 
@@ -234,6 +254,9 @@ Read these on demand, not upfront:
 
 - `references/recon.md` — scan strategy, hostname/vhost handling
 - `references/web.md` — directory/vhost fuzzing, common web vulns, auth bypass
+- `references/api.md` — REST/GraphQL discovery, JWT attacks, IDOR, race conditions, SSRF
+- `references/source-review.md` — reading recovered source: secrets, sinks, authorization gaps
+- `references/cracking.md` — hash identification, john/hashcat formats, spraying strategy
 - `references/services.md` — per-port playbooks (SMB, FTP, SSH, DNS, SNMP, LDAP, SQL, Redis, RPC, WinRM)
 - `references/foothold.md` — reverse shells, TTY upgrade, file transfer both ways
 - `references/artifacts.md` — mining recovered files (pcaps, archives, git, key material) for credentials
