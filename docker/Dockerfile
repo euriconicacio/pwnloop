@@ -40,5 +40,11 @@ RUN pipx install certipy-ad || echo "certipy-ad" >> /opt/skipped-packages.txt ; 
 RUN mkdir -p /engagements /vpn && \
     ln -sf /usr/share/seclists /opt/seclists 2>/dev/null || true
 
+# git refuses to commit without an identity, which blocks plumbing-based
+# exploitation (crafting tree objects to push at a target forge).
+RUN git config --global user.email "operator@lab.local" && \
+    git config --global user.name "operator" && \
+    git config --global safe.directory '*'
+
 WORKDIR /engagements
 CMD ["sleep", "infinity"]

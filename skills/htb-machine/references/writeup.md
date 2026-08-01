@@ -11,16 +11,36 @@ A write-up that only shows the winning path is the least useful kind. The dead
 ends are the content — they are what a reader facing an unfamiliar box actually
 needs.
 
+## Always show the flag being read
+
+Every write-up ends each half of the chain with the actual command and its
+actual output — `cat ~/user.txt`, `cat /root/root.txt`, `type ...\root.txt` —
+including the flag value. A write-up that says "and I got the user flag" proves
+nothing; the command plus its output is what materialises the result, and it is
+also the line a reader uses to confirm they landed in the same place you did.
+
+```
+user@machine:~$ cat user.txt
+<32-hex-flag>
+```
+
+Use a placeholder in this reference, never a real flag — examples get committed.
+
 ## Publish only what is publishable
 
-Before writing, confirm the machine is **retired** on the platform (not merely
-"expired" — expired machines can still be active). If it is not retired, still
-write the file, but mark it `DO NOT PUBLISH — <machine> is active` on line one.
+The local copy is complete, flags included. Redaction is a **publication** step,
+not a writing step — do not pre-redact and lose the evidence.
 
-Never include flag values. Replace them with `<user flag redacted>` /
-`<root flag redacted>`. Redact anything from the engagement that is not a
-property of the machine itself: your VPN address, your key material, your
-account names.
+Before writing, confirm the machine is **retired** on the platform (not merely
+"expired" — expired machines can still be active). If it is not retired, mark it
+`DO NOT PUBLISH — <machine> is active` on line one and keep it local.
+
+When a write-up is actually about to be published, produce a copy with the flag
+*values* replaced by `<redacted>` — keep the commands and the surrounding output
+so the chain still reads. Platform rules treat flag sharing as a violation
+regardless of the machine's status. Also strip anything that is a property of
+your engagement rather than of the machine: VPN address, key material, account
+names.
 
 ## Structure
 

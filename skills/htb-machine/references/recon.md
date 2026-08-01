@@ -54,6 +54,21 @@ Add every candidate to the container's hosts file:
 htb x "echo '$T machine.htb www.machine.htb' >> /etc/hosts"
 ```
 
+Append only — `sed -i /etc/hosts` fails inside a container with
+`Device or resource busy`, because `/etc/hosts` is bind-mounted and `sed -i`
+works by renaming a temporary file over the original. To replace a line, read
+the file, filter it, and append the corrected set rather than editing in place.
+
+When the raw IP 302s to a hostname, that is vhost gating and it is worth
+fuzzing for more vhosts *immediately* — the hostname you were given is rarely
+the only one. Take the response size of a deliberately wrong `Host` header as
+the `-fs` filter:
+
+```bash
+htb x "curl -s -o /dev/null -w '%{size_download}\n' -H 'Host: nope.machine.htb' http://$T/"
+htb x "ffuf -u http://$T/ -H 'Host: FUZZ.machine.htb' -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-20000.txt -fs <size> -s"
+```
+
 Then fuzz for more subdomains once you know the base domain — see
 `references/web.md`.
 
