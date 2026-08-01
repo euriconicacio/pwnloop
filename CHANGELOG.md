@@ -35,6 +35,30 @@ does not belong here — what belongs is what the run *changed*.
   Recovered NT hashes are generalised in published copies, a new redaction rule.
 - AD patterns added to `memory/patterns.md`: AS-REP first, token immutability,
   NTLM-over-Kerberos on lab DCs, and `Account Operators` as a takeover group.
+- AD CS validated against a live CA — `certipy find`/`req`/`auth` end to end,
+  ESC1 to Domain Admin. The reference now lists the four settings to confirm in
+  `certipy find` output rather than trusting its `[!] ESC1` tag, and treats
+  revoking the issued certificate as part of cleanup, since a certificate
+  survives a password reset for its full lifetime.
+- `faketime` and `poppler-utils` added to the image. Both were being relied on
+  by accident as transitive dependencies; an upstream change would have broken a
+  run silently.
+- New methodology from the same run: MSSQL at guest privilege as a coercion
+  primitive (`xp_dirtree` and family), application error logs as a credential
+  source (a password typed into a username field is logged verbatim), listing
+  the system drive root as the first command after a Windows foothold, and a
+  `foothold.md` section on capture tools that log nothing — UNC negative
+  caching, and `pkill -f` matching its own shell.
+
+### Fixed
+
+- **Corrected wrong guidance about clock skew.** `references/ad.md` told the
+  operator to run `ntpdate -u <dc>` when Kerberos failed. That cannot work: the
+  container has no `CAP_SYS_TIME`, so `ntpdate` measures the offset and then
+  fails to apply it. Following it would have blocked PKINIT entirely. The fix is
+  `ntpdate -q` to measure and a `faketime` shim on the single command that needs
+  it. Every remaining mention of `ntpdate -u` now explains why it fails instead
+  of recommending it.
 
 ## [1.0.0] — 2026-08-01
 

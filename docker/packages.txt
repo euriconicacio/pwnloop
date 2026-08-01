@@ -63,6 +63,7 @@ ldap-utils
 krb5-user
 evil-winrm
 rpcbind
+faketime
 
 # services / clients
 openssh-client
@@ -100,3 +101,4 @@ gdb
 python3-pwntools
 binutils
 steghide
+poppler-utils

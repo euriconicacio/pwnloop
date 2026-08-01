@@ -37,6 +37,16 @@ Format: what to look for → why it pays → the check, in one line each.
 - **A capture of a cleartext protocol *is* a credential.** FTP, Telnet, HTTP
   basic, unencrypted SMTP/IMAP, SNMP, LDAP simple bind. Treat "can download a
   pcap" as "can read passwords". *(Cap)*
+- **A database's lowest privilege is still a credential primitive.** A `guest`
+  principal with no readable data can often still run a directory/file
+  procedure (`xp_dirtree`, `xp_fileexist`, `xp_subdirs`, `LOAD_FILE`,
+  `COPY ... FROM PROGRAM`) and make the *service account* authenticate to a UNC
+  path you choose. Empty database, full credential. *(Escape)*
+- **Application error logs record the username that was supplied, verbatim.**
+  SQL Server, and most auth stacks, log failed logins with the typed name — so a
+  password pasted into the username field is persisted in cleartext. Grep every
+  readable log for `Logon failed`/`Login failed` and read the *next* line.
+  *(Escape)*
 
 ## Web
 
@@ -77,8 +87,14 @@ Format: what to look for → why it pays → the check, in one line each.
   effect in the same session)*
 - **On a lab DC, prefer NTLM/password auth to Kerberos unless you need it.**
   Kerberos adds `KRB_AP_ERR_SKEW` as a failure mode — the DC clock and yours
-  drift minutes apart. `net rpc` / impacket with a password sidesteps it; if you
-  must use Kerberos, `ntpdate -u <dc>` first. *(Forest)*
+  drift minutes apart. `net rpc` / impacket with a password sidesteps it.
+  *(Forest)*
+- **When Kerberos is unavoidable, use `faketime`, not `ntpdate`.** The container
+  has no `CAP_SYS_TIME`, so `ntpdate` measures the offset and then fails to
+  apply it (`step_systime: Operation not permitted`); the clock belongs to the
+  host kernel. `ntpdate -q <dc>` to read the offset, then
+  `faketime "$(date -u -d '+Nh Nm Ns' '+%F %T')" <cmd>` shifts one process only.
+  Required for PKINIT/certipy auth. *(Escape: 8 h skew)*
 - **Beat a lab box's reset job by not depending on persistent state.** State
   changes (group membership, ACLs) get reverted every few minutes. Chain the
   add + grant + use in one Linux-side window, each step re-authenticating fresh,
@@ -90,6 +106,15 @@ Format: what to look for → why it pays → the check, in one line each.
 - **`admincount=False` on a privileged group means its DACL is writable.**
   AdminSDHolder is not protecting it, so a lower tier with `GenericAll`/`WriteDacl`
   over it can rewrite its rights. *(Forest)*
+- **`BUILTIN\Certificate Service DCOM Access` in a user's token means AD CS is
+  reachable.** That group membership is the artifact that justifies running
+  `certipy find -vulnerable`; check `whoami /all` for it on every Windows user
+  you land as. *(Escape: ESC1 on a template enrollable by Domain Users)*
+- **An ESC1 certificate outlives the password.** Enrollee-supplies-subject plus
+  client-auth EKU plus no manager approval is domain admin in one request, and
+  the issued cert stays valid for its full lifetime (often 10 years) through
+  password resets. Revoking it is part of cleanup, and it is the finding to lead
+  the report with. *(Escape)*
 
 ## Tooling and environment
 
@@ -102,6 +127,20 @@ Format: what to look for → why it pays → the check, in one line each.
 - **A missing tool costs more than the time to install it.** When a step stalls
   on tooling, add the package to `docker/packages.txt` in the same session —
   that is what the second loop is for.
+- **A silent capture tool is not a failed attack — put `tcpdump` on the
+  interface.** `impacket-smbserver` captured a NetNTLMv2 correctly while
+  printing nothing at all. The wire is ground truth: a 553-byte SMB
+  session-setup packet *is* the `NTLMSSP_AUTH`, and
+  `tshark -Y ntlmssp -T fields -e ntlmssp.auth.username -e ntlmssp.auth.domain
+  -e ntlmssp.ntlmserverchallenge -e ntlmssp.auth.ntresponse` rebuilds the hash
+  as `user::domain:challenge:proof:blob`. Capture before you restart the tool a
+  third time. *(Escape)*
+- **Coerced SMB callbacks are negative-cached by the target.** Vary the UNC path
+  on each retry (`\\ip\pwn01`, `\\ip\pwn02`) or you will conclude the
+  primitive stopped working when only the cache spoke. *(Escape)*
+- **`pkill -f <pattern>` matches its own shell.** A command line containing the
+  pattern kills the wrapper that was about to restart the process. Match on a
+  path fragment the launcher does not contain, or kill by PID. *(Escape)*
 
 ## Method
 

