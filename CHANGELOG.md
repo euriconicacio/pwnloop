@@ -22,6 +22,20 @@ does not belong here — what belongs is what the run *changed*.
 
 ## [Unreleased]
 
+### Added
+
+- First Windows / Active Directory validation, against a retired DC. The AD
+  methodology now has live-fire behind it, and the run surfaced two gotchas that
+  are now documented in `references/ad.md` and `memory/patterns.md`:
+  a Windows access token is fixed at logon (a just-granted group is invisible to
+  the current session), and lab DCs run a reset job that reverts state — so
+  add + grant + use must be chained in one window with fresh auth each step.
+- `writeups/forest.md` — redacted write-up of the AD chain (AS-REP roast →
+  Account Operators → Exchange `WriteDacl` on the domain → DCSync → PtH).
+  Recovered NT hashes are generalised in published copies, a new redaction rule.
+- AD patterns added to `memory/patterns.md`: AS-REP first, token immutability,
+  NTLM-over-Kerberos on lab DCs, and `Account Operators` as a takeover group.
+
 ## [1.0.0] — 2026-08-01
 
 First public release. Validated end to end against two retired Hack The Box
@@ -57,10 +71,10 @@ machines, both Linux (one easy, one medium).
 - The image builds from a rolling-release base with unpinned packages: resilient
   to upstream churn, but not bit-for-bit reproducible. Pinning the base by digest
   and freezing the package snapshot is the fix when reproducibility matters.
-- Validated only against Linux targets so far. Windows and Active Directory
-  references are written but not yet exercised against a live machine.
-- Two machines is two data points, and neither defeated the loop — so its
-  failure mode is still unobserved.
+- At release, validated only against Linux targets. (Windows/AD validation
+  landed shortly after — see Unreleased.)
+- Small sample, and no machine has defeated the loop yet — so its failure mode
+  is still unobserved.
 
 [Unreleased]: https://github.com/euriconicacio/pwnloop/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.0.0

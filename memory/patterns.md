@@ -64,6 +64,33 @@ Format: what to look for → why it pays → the check, in one line each.
 - **`uid=0` with a non-zero `gid` means you got there through a capability or
   SUID binary, not a login.** Useful orientation in an unfamiliar shell.
 
+## Active Directory
+
+- **AS-REP roast is the first move against any DC where you can list users.** One
+  command, zero credentials, and you can often list users anonymously via
+  `rpcclient -U "" -N ... enumdomusers`. Try it before anything needing a
+  password. *(Forest: `svc-alfresco` had preauth disabled; cracked in 1 s)*
+- **A Windows access token is fixed at logon.** Gain a group or a right and the
+  *current* session does not see it — you need a new logon, which on Kerberos
+  means a new TGT. This is the most common cause of "insufficient rights" when
+  the rights are, on paper, present. *(Forest: group-add over WinRM never took
+  effect in the same session)*
+- **On a lab DC, prefer NTLM/password auth to Kerberos unless you need it.**
+  Kerberos adds `KRB_AP_ERR_SKEW` as a failure mode — the DC clock and yours
+  drift minutes apart. `net rpc` / impacket with a password sidesteps it; if you
+  must use Kerberos, `ntpdate -u <dc>` first. *(Forest)*
+- **Beat a lab box's reset job by not depending on persistent state.** State
+  changes (group membership, ACLs) get reverted every few minutes. Chain the
+  add + grant + use in one Linux-side window, each step re-authenticating fresh,
+  rather than modifying state and coming back later. *(Forest)*
+- **`Account Operators` is a domain-takeover group, not helpdesk.** Combined with
+  the default Exchange `WriteDacl`-on-domain ACL, membership is a direct path to
+  DCSync. Collect BloodHound and read the domain object's ACEs before assuming
+  the path. *(Forest: Account Operators → Exchange Windows Permissions → DCSync)*
+- **`admincount=False` on a privileged group means its DACL is writable.**
+  AdminSDHolder is not protecting it, so a lower tier with `GenericAll`/`WriteDacl`
+  over it can rewrite its rights. *(Forest)*
+
 ## Tooling and environment
 
 - **Git's refusal to build a path is porcelain, not format.** `git add` rejects

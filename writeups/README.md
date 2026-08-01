@@ -8,6 +8,7 @@ through the redaction step described in
 |---------|----------|----|-------|
 | [Cap](cap.md) | Hack The Box (retired) | Linux | IDOR → pcap → cleartext FTP credential → password reuse → `cap_setuid` on the system Python |
 | [Nexus](nexus.md) | Hack The Box (retired) | Linux | vhost fuzzing → secret in git history → credential reuse → CVE-2026-38526 upload RCE → production `.env` → path traversal in a root-run sync job |
+| [Forest](forest.md) | Hack The Box (retired) | Windows / AD | anonymous user enum → AS-REP roast → crack → WinRM → Account Operators → Exchange `WriteDacl` on domain → DCSync → pass-the-hash |
 
 ## What is redacted, and what is not
 
@@ -24,7 +25,13 @@ public write-up of it:
 
 - service versions, hostnames and virtual hosts
 - the vulnerabilities themselves, and the exact requests that trigger them
-- credentials planted on the box by its author
+- credentials planted on the box by its author (e.g. a cracked service-account
+  password), which appear in every public write-up of the machine
+
+One extra step for Windows machines: **recovered hashes are generalised too**,
+even though they are a machine property. An Administrator NT hash is a
+pass-the-hash credential for the whole domain, so it reads as `<administrator-nt-hash>`
+in the published copy while the technique around it stays intact.
 
 ## Publication rule
 

