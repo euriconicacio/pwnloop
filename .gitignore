@@ -1,0 +1,8 @@
+# Engagement data and VPN credentials never belong in the repository.
+engagements/
+vpn/
+!vpn/.gitkeep
+*.ovpn
+*.log
+.DS_Store
+.claude/settings.local.json

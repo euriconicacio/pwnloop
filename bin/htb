@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# htb — thin wrapper around the Kali lab container.
+#
+#   htb build              rebuild the image
+#   htb up                 create/start the container
+#   htb down               stop and remove the container
+#   htb sh                 interactive shell inside the container
+#   htb x <cmd...>         run a command inside the container (non-interactive)
+#   htb vpn <file.ovpn>    start OpenVPN inside the container (backgrounded)
+#   htb vpn-status         show tun0 / HTB reachability
+#   htb vpn-stop           kill the VPN
+#   htb status             image, container, VPN and tooling summary
+set -euo pipefail
+
+LAB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+IMAGE="htb-kali:latest"
+NAME="htb-kali"
+
+usage() { sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+
+# `docker inspect` also matches images, so always scope these to containers.
+running() { [ "$(docker container inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null || echo false)" = "true" ]; }
+exists()  { docker container inspect "$NAME" >/dev/null 2>&1; }
+
+cmd_build() {
+  docker build --platform linux/arm64 -t "$IMAGE" "$LAB_DIR/docker"
+}
+
+cmd_up() {
+  if exists; then
+    running || docker start "$NAME" >/dev/null
+  else
+    mkdir -p "$LAB_DIR/engagements" "$LAB_DIR/vpn"
+    docker run -d --name "$NAME" \
+      --platform linux/arm64 \
+      --cap-add=NET_ADMIN \
+      --device /dev/net/tun \
+      --dns 1.1.1.1 \
+      -v "$LAB_DIR/engagements:/engagements" \
+      -v "$LAB_DIR/vpn:/vpn:ro" \
+      "$IMAGE" >/dev/null
+  fi
+  echo "container $NAME is up"
+}
+
+cmd_x() {
+  running || cmd_up >/dev/null
+  docker exec -w /engagements "$NAME" bash -lc "$*"
+}
+
+cmd_sh() {
+  running || cmd_up >/dev/null
+  docker exec -it -w /engagements "$NAME" bash -l
+}
+
+cmd_vpn() {
+  local ovpn="${1:?usage: htb vpn <file.ovpn>}"
+  local base; base="$(basename "$ovpn")"
+  [ -f "$LAB_DIR/vpn/$base" ] || { echo "put $base in $LAB_DIR/vpn/ first" >&2; exit 1; }
+  running || cmd_up >/dev/null
+  docker exec -d "$NAME" bash -lc \
+    "openvpn --config /vpn/$base --daemon --log /tmp/openvpn.log --writepid /tmp/openvpn.pid"
+  echo "openvpn starting; check with: htb vpn-status"
+}
+
+cmd_vpn_status() {
+  cmd_x 'ip -4 addr show tun0 2>/dev/null || echo "tun0: down"; echo "--- last log ---"; tail -n 5 /tmp/openvpn.log 2>/dev/null || true'
+}
+
+cmd_vpn_stop() { cmd_x 'pkill -F /tmp/openvpn.pid 2>/dev/null || pkill openvpn || true; echo stopped'; }
+
+cmd_status() {
+  echo "image:     $(docker images -q "$IMAGE" | head -1 || echo '<none>')"
+  echo "container: $(running && echo running || echo stopped)"
+  running && cmd_x 'for t in nmap ffuf feroxbuster nxc netexec impacket-secretsdump evil-winrm sqlmap hydra john searchsploit openvpn; do printf "%-22s %s\n" "$t" "$(command -v $t || echo -)"; done; echo; ip -4 addr show tun0 2>/dev/null | grep inet || echo "tun0: down"'
+}
+
+case "${1:-}" in
+  build) shift; cmd_build "$@" ;;
+  up) shift; cmd_up "$@" ;;
+  down) docker rm -f "$NAME" >/dev/null 2>&1 && echo "removed" ;;
+  sh) shift; cmd_sh "$@" ;;
+  x) shift; cmd_x "$@" ;;
+  vpn) shift; cmd_vpn "$@" ;;
+  vpn-status) cmd_vpn_status ;;
+  vpn-stop) cmd_vpn_stop ;;
+  status) cmd_status ;;
+  *) usage ;;
+esac

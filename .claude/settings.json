@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(./bin/htb:*)",
+      "Bash(bin/htb:*)",
+      "Bash(~/htb-lab/bin/htb:*)",
+      "Bash($HOME/htb-lab/bin/htb:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker start htb-kali)",
+      "Bash(docker ps:*)",
+      "Read(//Users/*/htb-lab/**)",
+      "Write(//Users/*/htb-lab/engagements/**)",
+      "Edit(//Users/*/htb-lab/engagements/**)"
+    ],
+    "deny": [
+      "Bash(docker rm:*)",
+      "Bash(rm -rf:*)"
+    ]
+  }
+}
