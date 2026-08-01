@@ -90,6 +90,20 @@ The point of this loop is to *find* the path, not to recall it. Recall is not
 removable — a well-known retired machine may be familiar — so it is handled by
 disclosure and by constraining what is allowed to drive the next action.
 
+**Prefer to be given only an IP.** The machine's name is the single strongest
+recall trigger there is — a well-known name returns its published chain before a
+single port has been scanned. Working from an address alone means recognition can
+only happen *after* enumeration has earned the fingerprint, by which point the
+search order was set honestly. So:
+
+- Name the engagement directory from the address, not from the machine:
+  `/engagements/10-129-51-2/`. Do not ask the operator what the box is called.
+- If the operator supplies a name anyway, use it, but record it in the ledger as
+  a recall risk alongside the recognition line.
+- Expect the target to identify itself mid-run — an SMB hostname, an AD domain, a
+  TLS certificate. That is fine and unavoidable; at that point apply the
+  recognition rule below.
+
 **Never look up the answer.** Do not search for the machine's name together with
 "writeup", "walkthrough", "solution" or "how to root". Do not open a write-up for
 the target even if one surfaces incidentally. Researching a *technology* is the
@@ -105,8 +119,9 @@ you are recalling, not deducing. Go collect the observation first, and let it
 either confirm or kill the idea. This is the practical difference between an
 engagement and a re-enactment.
 
-**Declare recognition immediately.** If you recognise the target, write it at the
-top of the ledger before doing anything else:
+**Declare recognition the moment it happens.** If you recognise the target — at
+the start, or halfway through when a hostname gives it away — write it in the
+ledger before the next command:
 
 ```markdown
 > Recognition: I have prior knowledge of this machine's published path. Search

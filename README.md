@@ -8,7 +8,7 @@
     88                                                88
     dP                                                dP
 
-    v1.0 by Eurico Nicacio (h3llh0und)
+    v1.0.0 by Eurico Nicacio (h3llh0und)
     autonomous lab-machine engagement loop
 ```
 
@@ -18,7 +18,7 @@ IP" into a full recon → foothold → privilege-escalation → cleanup → repo
 you can watch happen.
 
 ```
-> /pwnloop 10.129.50.240 cap
+> /pwnloop 10.129.50.240
 
   [recon]    3 ports — 21 vsftpd 3.0.3, 22 OpenSSH 8.2p1, 80 Gunicorn
   [web]      /capture → 302 /data/1 — sequential id, no ownership check
@@ -221,11 +221,18 @@ Spawn the machine on the platform, then:
 
 ```bash
 cd ~/pwnloop && claude
-> /pwnloop 10.129.50.240 cap
+> /pwnloop 10.129.50.240
 ```
 
+**Pass the address only — not the machine's name.** The name is the strongest
+recall trigger there is: a well-known one returns its published chain before a
+port has been scanned. Withholding it means the agent can only recognise the box
+*after* enumeration has earned the fingerprint, by which point the search order
+was set honestly. It is the one control on recall that you can enforce rather
+than trust.
+
 The agent verifies the VPN and reachability, creates
-`engagements/cap/`, and works from there without stopping between phases. It
+`engagements/10-129-50-240/`, and works from there without stopping between phases. It
 announces each flag in chat the moment it reads it, so you can paste it into
 the platform without waiting for the run to finish.
 
@@ -233,7 +240,7 @@ To watch the run rather than the transcript, tail the ledger in another window �
 this is also what to project if you are demonstrating to an audience:
 
 ```bash
-tail -f ~/pwnloop/engagements/cap/FINDINGS.md
+tail -f ~/pwnloop/engagements/10-129-50-240/FINDINGS.md
 ```
 
 It will come back to you only for: VPN down, target unreachable for more than
@@ -243,7 +250,7 @@ three full enumeration loops with no new leads.
 ## What you get
 
 ```
-engagements/<machine>/
+engagements/<address>/
   FINDINGS.md    append-only ledger, updated live — findings, evidence, status
   REPORT.md      defender-facing: chain, impact, remediation, earliest break point
   WRITEUP.md     teaching-facing: the narrative, including the leads that failed
