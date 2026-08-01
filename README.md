@@ -415,6 +415,18 @@ public repositories). It catches token-shaped secrets the hook does not know
 about; the hook catches flags and lab credentials that GitHub does not recognise
 as secrets. They cover different halves of the problem.
 
+## Versioning
+
+The version lives in [`VERSION`](VERSION), is printed by `pwnloop banner`, and
+is tagged in git. Changes are recorded in [`CHANGELOG.md`](CHANGELOG.md), which
+also explains what major, minor and patch mean for a methodology rather than a
+library — briefly: major breaks a workflow, minor adds capability, patch fixes
+something upstream broke.
+
+Because engagements are required to write back into the methodology, minor
+releases are the normal cadence. What earns a changelog entry is what a run
+*changed*, not that a run happened.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

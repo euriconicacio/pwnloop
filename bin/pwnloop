@@ -97,7 +97,8 @@ cmd_banner() {
     88                                                88
     dP                                                dP
 ART
-  printf '\n    %sv1.0 by Eurico Nicacio (h3llh0und)%s\n' "$V" "$R"
+  local ver; ver=$(cat "$LAB_DIR/VERSION" 2>/dev/null || echo "dev")
+  printf '\n    %sv%s by Eurico Nicacio (h3llh0und)%s\n' "$V" "$ver" "$R"
   printf '    %sautonomous lab-machine engagement loop%s\n\n' "$D" "$R"
 }
 
