@@ -12,6 +12,26 @@ watch happen.
 > Running it against systems you do not have written permission to test is a
 > crime in most jurisdictions.
 
+## Platform rules
+
+This repository contains tooling and methodology, not solutions, and publishing
+it breaks no platform rule. What you produce with it is a different matter — on
+Hack The Box specifically:
+
+- Solutions, writeups and streams are allowed **only for content confirmed
+  retired**. Sharing how you solved active Machines, Challenges, Sherlocks or
+  Pro Labs is prohibited.
+- "Expired" is not "retired". An expired machine has merely stopped counting
+  toward seasonal points and may still be active — check the status explicitly
+  before you publish anything about it.
+- Flags are never shareable, whatever the target's status. The report template
+  keeps flag hashes in the local engagement directory and tells you to strip
+  them from anything you distribute.
+- `engagements/` is gitignored for exactly this reason. Keep it that way.
+
+Use this in accordance with the terms of service of whatever platform you point
+it at, and only against targets you are authorized to test.
+
 ## Why a container
 
 macOS is a poor host for offensive tooling: half the toolchain is Linux-only,

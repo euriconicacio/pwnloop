@@ -51,5 +51,9 @@ Two things make this useful rather than decorative:
   would have stopped the chain closest to the start. That is the recommendation
   that actually gets funded.
 
-Keep the flag hashes in the report — they are the proof of completion — but
-never publish a report for a machine that is still active on the platform.
+Keep the flag hashes in the local report — they are the proof of completion —
+but strip them from anything that leaves the machine. Platform rules treat flag
+sharing as a violation regardless of the target's status, and solutions may only
+be published for content that is confirmed **retired**. "Expired" is not
+"retired": an expired machine no longer scores seasonal points but can still be
+active, and publishing its solution is a ToS violation.

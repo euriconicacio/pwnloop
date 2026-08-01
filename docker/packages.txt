@@ -1,6 +1,6 @@
 # base
 rlwrap
-ntpdate
+ntpsec-ntpdate
 ca-certificates
 curl
 wget

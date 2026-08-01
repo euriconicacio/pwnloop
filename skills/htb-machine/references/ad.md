@@ -10,10 +10,13 @@ htb x "impacket-lookupsid anonymous@$T"              # user enumeration via SID 
 htb x "nmap -p88 --script krb5-enum-users --script-args krb5-enum-users.realm='MACHINE.HTB',userdb=/usr/share/seclists/Usernames/xato-net-10-million-usernames-dup.txt $T"
 ```
 
-Time skew breaks Kerberos. Sync first if you see `KRB_AP_ERR_SKEW`:
+Time skew breaks Kerberos. Sync to the DC if you see `KRB_AP_ERR_SKEW`:
 ```bash
-htb x "ntpdate -u $T || rdate -n $T"
+htb x "ntpdate -u $T"          # ntpsec-ntpdate; the container has NET_ADMIN
+htb x "date -s \"\$(date -d \"\$(rdate -p -n $T)\" -u +'%Y-%m-%d %H:%M:%S')\""   # fallback
 ```
+If neither works, wrap the impacket call in `faketime` rather than fighting the
+container clock.
 
 ## AS-REP roasting (no creds needed, just usernames)
 
