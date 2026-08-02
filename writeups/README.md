@@ -13,6 +13,7 @@ through the redaction step described in
 | [Bruno](bruno.md) | Vulnlab (retired) | Windows / AD | service-account password → Kerberoast reuse → `MachineAccountQuota` + Certifried (CVE-2022-26923) → certificate → pass-the-hash |
 | [Fireflow](fireflow.md) | Hack The Box (retired) | Linux / k8s | unauth Langflow public-flow RCE (CVE-2026-38526) → env password → SSH (user) → MCP/registry credential leak → Kubernetes `get nodes/proxy` kubelet exec → privileged pod → node root |
 | [Abducted](abducted.md) | Hack The Box (retired) | Linux | CVE-2026-4480 Samba `%J` print-command injection → world-readable rclone credential (reversible) → password reuse → SMB wide-links/force-user lateral → operators-writable systemd drop-in → root |
+| [Soulmate](soulmate.md) | Hack The Box (retired) | Linux | CrushFTP CVE-2025-31161 auth bypass → admin VFS `file:///` mount (root-in-container) → `PUT` webshell into bind-mounted webroot → `www-data` → root-owned Erlang/OTP SSH CVE-2025-32433 pre-auth RCE → SUID bash |
 
 ## What is redacted, and what is not
 

