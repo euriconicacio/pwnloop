@@ -25,6 +25,13 @@ Getting the format wrong wastes the whole run. Common shapes:
 | `user::DOMAIN:...` | NetNTLMv2 | `netntlmv2` | 5600 |
 | `$sshng$` | SSH private key | `ssh` | 22921 |
 | `$office$` / `$zip2$` | Office / ZIP archive | `office` / `zip` | 9600 / 13600 |
+| `$DCC2$` / `$mscash2` | domain cached creds | `mscash2` | 2100 |
+| `$krb5pa$23$` | Kerberos preauth (etype 23) | `krb5pa-md5` | 7500 |
+| `user:::hash:::` (NetNTLMv1) | NetNTLMv1 | `netntlm` | 5500 |
+| `pbkdf2_sha256$` | Django | `django` | 10000 |
+| `$pdf$` / `$racf$` | PDF / mainframe | `pdf` / `racf` | 10500 / 8500 |
+| `$mysqlna$` / `*XXXX` | MySQL 4.1+ | `mysql-sha1` | 300 |
+| 32 hex, no salt, uppercase | LM (legacy) | `lm` | 3000 |
 
 ## The `*2john` family
 

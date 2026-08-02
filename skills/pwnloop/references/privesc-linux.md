@@ -38,10 +38,25 @@ sudo awk 'BEGIN {system("/bin/sh")}'
 sudo less /etc/profile      # then !/bin/sh
 ```
 `env_keep+=LD_PRELOAD` present → compile a shared object with a `_init` that
-spawns a shell, then `sudo LD_PRELOAD=/tmp/x.so <anything>`.
+spawns a shell, then `sudo LD_PRELOAD=/tmp/x.so <anything>`. `LD_LIBRARY_PATH`
+kept works the same way with a fake `libc`.
 Wildcards in a sudo rule (`sudo /bin/tar -czf /tmp/x /var/www/*`) → checkpoint
 injection or filename-as-argument tricks.
 `(ALL, !root)` in older sudo → CVE-2019-14287, `sudo -u#-1 /bin/bash`.
+Sudo `< 1.9.5p2` → Baron Samedit (CVE-2021-3156), a heap overflow reachable with
+**no sudo rights at all** (`sudoedit -s '\' $(perl -e 'print "A"x1000')` to
+confirm it segfaults). `sudo -l` needing no password after you already ran one →
+a live sudo token you can reuse.
+
+Quick classes the sweep already surfaced:
+- **Writable `/etc/passwd`** → add a root-uid user with a known hash
+  (`openssl passwd -1`), `su` to it. Writable `/etc/shadow` → same idea.
+- **PATH hijack** → a root cron/SUID/script calling a bare command (`tar`, not
+  `/bin/tar`) with a PATH you can prepend → drop a malicious `tar` first in PATH.
+- **PwnKit (CVE-2021-4034)** — `pkexec` present and SUID is the give-away; a
+  config bug, not a kernel bug, so it's safe to try early on older images.
+- **polkit/D-Bus** → `busctl list` for services running as root that expose a
+  method you can call (e.g. `CreateUser`, package-install actions).
 
 ## SUID / capabilities
 
@@ -120,11 +135,12 @@ Every password you have found, tried against every user in `/etc/passwd`, plus
 
 ## Containers
 
-If `/.dockerenv` exists or the cgroup shows docker, check for:
-- the docker socket mounted (`/var/run/docker.sock`) → run a privileged
-  container mounting the host root
-- `--privileged` (check `capsh --print` for `cap_sys_admin`) → cgroup release_agent escape
-- host filesystem mounted somewhere under `/mnt`
+If `/.dockerenv` exists, the cgroup shows docker/lxc, or `hostname` is a short
+hex — you're in a container, and "root" here is not the host. The escape is
+usually a mounted socket or an over-broad capability, not a kernel bug. Full
+escape catalog (docker.sock, privileged, `CAP_SYS_ADMIN` release_agent,
+`SYS_PTRACE`, `SYS_MODULE`, host mounts, `/proc` tricks) is in
+**`references/containers.md`**.
 
 If there is a Kubernetes service account (`/var/run/secrets/kubernetes.io/…`) or
 the host runs a cluster (k3s/kubeadm/microk8s), the container is usually one step

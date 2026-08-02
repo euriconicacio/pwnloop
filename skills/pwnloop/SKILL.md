@@ -268,9 +268,31 @@ vhost-gated. See `references/recon.md`.
 
 ### 2. Service enumeration
 One track per open port, in parallel. Web gets directory + vhost fuzzing and a
-manual read of the actual pages. SMB/NFS/FTP get anonymous-access checks.
-Anything with a version number gets a `searchsploit` lookup. See
+manual read of the actual pages. SMB/NFS/FTP get anonymous-access checks. See
 `references/services.md` and `references/web.md`.
+
+**Pin the exact version of every service, then hunt CVEs and PoCs — this is a
+primary activity, not an afterthought.** For each service with any version
+banner (and for the product even when the banner is vague, e.g. "Samba 4"):
+
+1. **Pin the precise version** — use protocol-specific probes, not just the
+   nmap `-sV` guess (`smbclient`/`rpcclient` for Samba, HTTP headers/`/version`
+   endpoints for web apps, package strings, TLS certs). "Samba 4" is not a
+   version; get `4.x.y`.
+2. **`searchsploit <product>`** for the offline copy — but know it is stale.
+3. **Web + GitHub search for CVEs and public PoCs** — `searchsploit` will not
+   have anything recent. Search `"<product> <version> CVE"`, the vendor
+   advisories, and **GitHub for a PoC** (`<product> CVE-XXXX-YYYY PoC`). A
+   current, high-severity CVE with a public exploit is very often the intended
+   foothold on a modern lab box, and it will be invisible if you only read
+   banners. Read the CVE/PoC to learn the *mechanism* (which field is the sink,
+   which tool delivers it) — that is technology research and is always allowed;
+   reading the target's own walkthrough is not.
+
+Do this **before** hand-rolling blind exploitation. On this loop's ABDUCTED box,
+skipping the CVE/PoC hunt cost the entire run: the path was CVE-2026-4480 (Samba
+`%J` print-command injection) and the delivery detail (sink = SPOOLSS
+`document_name`, not the smbclient filename) came straight from the PoC.
 
 ### 3. Foothold
 Exploit the most promising lead. Catch shells with a listener you started
@@ -284,9 +306,15 @@ reaching for privesc scripts: home directories, config files with credentials,
 readable databases, `sudo -l`, cron, running processes. Reuse every credential
 you find against every service and user — password reuse is the most common
 intended path. See `references/privesc-linux.md`,
-`references/privesc-windows.md`, `references/ad.md`. If the foothold landed in a
-container or the host runs a cluster (k3s/kubeadm/microk8s), see
-`references/kubernetes.md`; for flow/agent/MCP platforms, `references/llm-apps.md`.
+`references/privesc-windows.md`, `references/ad.md`. In AD specifically:
+`references/adcs.md` (certificate paths) and `references/relay.md` (coercion +
+relay) are frequent modern routes — check `certipy find` and signing state early.
+If the foothold landed in a container or the host runs a cluster
+(k3s/kubeadm/microk8s), see `references/containers.md` and
+`references/kubernetes.md`; if the box holds cloud credentials or an SSRF reaches
+a metadata service, `references/cloud.md`; for flow/agent/MCP platforms,
+`references/llm-apps.md`. When a Windows control blocks your command (AMSI, CLM,
+AppLocker), see `references/evasion.md` rather than assuming the technique failed.
 
 ### 5. Privilege escalation
 Work the enumeration output, not a blind exploit list. Prefer misconfiguration
@@ -395,18 +423,24 @@ what was cleaned up, and the paths to `FINDINGS.md`, `REPORT.md` and
 Read these on demand, not upfront:
 
 - `references/recon.md` — scan strategy, hostname/vhost handling
-- `references/web.md` — directory/vhost fuzzing, common web vulns, auth bypass
+- `references/web.md` — fuzzing, LFI/upload/SQLi/SSTI/XXE/deserialization/SSRF, prototype pollution, smuggling, auth bypass
 - `references/api.md` — REST/GraphQL discovery, JWT attacks, IDOR, race conditions, SSRF
-- `references/llm-apps.md` — Langflow/Flowise/MCP platforms: unauth flow-execution RCE, alg:none, tool registries
+- `references/llm-apps.md` — Langflow/Flowise/MCP platforms: unauth flow-execution RCE, alg:none, tool registries, RAG poisoning
 - `references/source-review.md` — reading recovered source: secrets, sinks, authorization gaps
 - `references/cracking.md` — hash identification, john/hashcat formats, spraying strategy
-- `references/services.md` — per-port playbooks (SMB, FTP, SSH, DNS, SNMP, LDAP, SQL, Redis, RPC, WinRM)
+- `references/services.md` — per-port playbooks (SMB, FTP, SSH, DNS, SNMP, LDAP, SQL, Redis, RPC, WinRM, SMTP, rsync, RMI/JDWP, app servers, NoSQL, IPMI/VNC)
+- `references/binary.md` — custom network services and SUID binaries: triage, command-injection handlers, stack overflow, ret2libc/ROP, format string
 - `references/foothold.md` — reverse shells, TTY upgrade, file transfer both ways
+- `references/evasion.md` — getting past AMSI, Constrained Language Mode, AppLocker/WDAC, Defender on a lab box
 - `references/artifacts.md` — mining recovered files (pcaps, archives, git, key material) for credentials
-- `references/privesc-linux.md` — sudo, SUID, capabilities, cron, containers
-- `references/kubernetes.md` — SA RBAC, kubelet exec via `get nodes/proxy`, privileged-pod and container escape
-- `references/privesc-windows.md` — tokens, services, AlwaysInstallElevated, UAC
-- `references/ad.md` — AS-REP/Kerberoast, BloodHound-less enumeration, DCSync
-- `references/pivoting.md` — chisel, ssh tunnels, proxychains
+- `references/privesc-linux.md` — sudo, SUID, capabilities, cron, PATH, polkit, kernel last-resort
+- `references/containers.md` — container escape: docker.sock, privileged/caps, cgroup release_agent, host mounts
+- `references/kubernetes.md` — SA RBAC, kubelet exec via `get nodes/proxy`, privileged-pod escape, secrets/etcd
+- `references/cloud.md` — IMDS/SSRF credential theft, AWS IAM privesc, Azure/Entra, GCP, cloud↔on-prem pivots
+- `references/privesc-windows.md` — tokens/potato selection, services, DPAPI, LAPS/gMSA, UAC bypass, AlwaysInstallElevated
+- `references/ad.md` — AS-REP/Kerberoast, DACL edges, delegation (unconstrained/constrained/RBCD), shadow credentials, DCSync, local Kerberos relay
+- `references/adcs.md` — AD CS ESC1–ESC16, certificate theft, golden-cert and DACL persistence
+- `references/relay.md` — NTLM/Kerberos coercion (PetitPotam/PrinterBug/DFSCoerce) and relay target matrix
+- `references/pivoting.md` — chisel, ligolo-ng, ssh tunnels, proxychains
 - `references/reporting.md` — defender-facing report structure
 - `references/writeup.md` — publishable write-up structure and redaction rules

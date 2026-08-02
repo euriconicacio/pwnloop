@@ -45,6 +45,22 @@ that exposes `POST /tools` (or equivalent) taking a `code`/`command` field is
 RCE by design; the only question is authorization. Enumerate `tools/list` first
 (often unauthenticated), then look at how registration is gated.
 
+## Model/inference servers and RAG
+
+- **Ollama** (`11434`), **vLLM**, **LocalAI**, **text-generation-webui** — often
+  bound with no auth. Beyond free inference, check for file-read/path params in
+  model-load endpoints and for exposed admin routes.
+- **LangChain/LlamaIndex glue** — a `PromptTemplate` or an `LLMMathChain`/
+  `PALChain` built from user input is server-side template injection or Python
+  `eval` RCE. Grep recovered source for `from_template`, `PythonREPL`,
+  `exec(`, `eval(` around the model call.
+- **RAG document poisoning / indirect prompt injection** — if the app ingests
+  documents, a file you can place (upload, a crawled page, a shared drive) whose
+  text instructs the agent to call a privileged tool is a real exploitation
+  primitive when the agent has tools worth abusing. Confirm a tool actually
+  consumes the store before building on it, same discipline as the MQTT
+  publish-vs-consume check.
+
 ## Auth on these services is usually weak
 
 - **JWT `alg:none`.** If `/version` or the docs advertise accepted algorithms

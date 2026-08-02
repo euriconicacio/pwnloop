@@ -22,6 +22,77 @@ does not belong here — what belongs is what the run *changed*.
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-08-02
+
+A large methodology-coverage expansion: six new reference files and substantial
+depth added across the existing ones, so the loop reaches for a documented
+technique instead of improvising in categories it previously only sketched.
+Distilled into the terse, command-oriented, container-prefixed house style; no
+box-specific content entered the shared methodology.
+
+### Added
+- **`references/adcs.md`** — the full AD CS escalation catalog **ESC1–ESC16**,
+  each with the precise vulnerable condition, the `certipy find` signal, and the
+  exact `certipy` request/auth commands; plus certificate theft (THEFT1–5,
+  UnPAC-the-hash), golden-certificate and DACL persistence, and the mandatory
+  revoke-by-serial cleanup. The inline AD CS section in `ad.md` is now a compact
+  pointer to it.
+- **`references/relay.md`** — NTLM/Kerberos coercion (**PrinterBug, PetitPotam,
+  DFSCoerce, ShadowCoerce**, Coercer enumeration), the SMB-vs-HTTP/WebDAV choice,
+  the `ntlmrelayx` target matrix (AD CS ESC8/ESC11, LDAP RBCD, SMB shell, SOCKS),
+  and when to fall back to the local relay or to capture-and-crack.
+- **`references/containers.md`** — container-escape catalog: mounted
+  docker/containerd socket, `--privileged`/`CAP_SYS_ADMIN` cgroup
+  `release_agent`, host-filesystem mounts, and capability-specific routes
+  (`SYS_PTRACE`, `SYS_MODULE`, `DAC_READ_SEARCH`, raw host disk).
+- **`references/cloud.md`** — cloud-attached targets: instance-metadata credential
+  theft (IMDSv1/v2, Azure, GCP) via SSRF or a VM shell, the canonical **AWS IAM
+  privilege-escalation paths**, Azure/Entra managed-identity and role abuse, GCP
+  service-account impersonation, and cloud↔on-prem pivots.
+- **`references/binary.md`** — custom network services and SUID binaries: checksec
+  triage, command-injection handlers, stack overflow → shellcode/ret2libc/ROP,
+  format-string leak-and-write, and the arm64-container-vs-x86-target caveat.
+- **`references/evasion.md`** — getting a command to *run* past a lab box's
+  defenses: recognizing AMSI vs Constrained Language Mode vs AppLocker/WDAC vs
+  on-access Defender from the symptom, and the smallest move past each.
+- **Published write-ups: Bruno, FireFlow, Abducted** (`writeups/`) — redacted
+  narratives for three retired machines (Vulnlab AD Certifried; HTB Langflow→k8s;
+  HTB Samba CVE-2026-4480 print-command injection).
+
+### Changed
+- **`SKILL.md` step 2** — service enumeration now mandates pinning the exact
+  service version and actively hunting **CVEs and public PoCs on the web and
+  GitHub** as a primary early activity (searchsploit misses recent CVEs); read
+  the CVE/PoC for the mechanism before hand-rolling blind exploitation.
+- **`references/ad.md`** — added a full **DACL edge table** (GenericAll/Write,
+  WriteDacl/Owner, AddKeyCredentialLink, WriteSPN, AddMember, WriteDacl→DCSync)
+  with the fastest tool per edge, **Shadow Credentials** and **targeted
+  Kerberoast**, and a **Kerberos delegation** section (unconstrained/constrained/
+  RBCD with a complete S4U chain and Bronze Bit).
+- **`references/web.md`** — added SSTI per-engine payloads, **NoSQL injection**,
+  **XXE** (incl. blind/OOB), a per-stack **deserialization** table, **prototype
+  pollution**, **request smuggling**, **cache poisoning/deception**, CORS/CSRF and
+  client-to-server chaining.
+- **`references/services.md`** — new playbooks for SMTP/IMAP, rsync, Java
+  RMI/JMX/JDWP, Tomcat/Jenkins/JBoss/WebLogic, Elasticsearch/Kibana/Mongo/
+  Memcached/CouchDB, Zabbix/IPMI/VNC/X11, and Postgres/MSSQL RCE.
+- **`references/privesc-windows.md`** — potato-variant selection guidance,
+  SeManageVolume/SeBackup/SeDebug routes, DPAPI, LAPS/gMSA reads, UAC bypass, and
+  a broader credential-store sweep.
+- **`references/privesc-linux.md`** — Baron Samedit, sudo token reuse,
+  writable-passwd/PATH-hijack/polkit/D-Bus quick classes; the container section
+  now points to `containers.md`.
+- **`references/kubernetes.md`** — secrets/etcd reads and the cloud-managed
+  cluster (EKS/AKS/GKE) node-IMDS pivot; generic escapes deferred to
+  `containers.md`.
+- **`references/cracking.md`** — more hash shapes (DCC2, NetNTLMv1, Django, MySQL,
+  LM, Kerberos preauth, PDF).
+- **`references/pivoting.md`** — ligolo-ng (TUN route) and socat relay.
+- **`references/llm-apps.md`** — inference-server exposure (Ollama/vLLM),
+  LangChain template/`eval` sinks, and RAG document-poisoning as a class.
+- **`SKILL.md`** — reference index and loop steps updated to route to the six new
+  files at the right phase.
+
 ## [1.3.0] — 2026-08-02
 
 Windows AD hardened-DC methodology, proven on a domain controller where every

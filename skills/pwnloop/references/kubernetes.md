@@ -173,6 +173,22 @@ Other escapes, in rough order of how often they are the intended path:
   `hostPID: true`, `privileged: true`, `hostPath: /`, `nodeName` pinned, then
   exec into it.
 
+The generic, non-Kubernetes escape primitives (socket, caps, cgroup, device) are
+catalogued in `references/containers.md` — this section is the Kubernetes-shaped
+subset.
+
+## High-value cluster reads
+
+- **Secrets** — `kubectl get secrets -A -o yaml` (or the SA's namespace) once
+  RBAC allows it: service-account tokens, registry pulls, DB passwords, TLS keys
+  all live here base64-encoded.
+- **etcd** — a reachable etcd (`2379`) with the client certs (often on the node
+  under `/etc/kubernetes/pki/etcd`) is the entire cluster state, secrets
+  included: `etcdctl --endpoints=... get / --prefix --keys-only`.
+- **Cloud-managed clusters (EKS/AKS/GKE)** — a pod that reaches the node IMDS
+  (`169.254.169.254`) can steal the *node's* cloud role and pivot out of the
+  cluster into the cloud account. See `references/cloud.md`.
+
 ## Cleaning up
 
 State you created in a cluster is not in `/tmp` and will not disappear on its
