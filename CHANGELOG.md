@@ -22,6 +22,13 @@ does not belong here — what belongs is what the run *changed*.
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-08-02
+
+Windows AD hardened-DC methodology, proven on a domain controller where every
+remote relay path was closed. The escalation was a **local** Kerberos relay off a
+DCOM trigger into an RBCD write, plus the Windows foothold ergonomics
+(drivable shells, egress testing, file-system C2) that the run was missing.
+
 ### Added
 - **Local Kerberos relay → RBCD** methodology in `references/ad.md`: the escalation
   for code execution on a hardened DC as a low-privilege account with no
