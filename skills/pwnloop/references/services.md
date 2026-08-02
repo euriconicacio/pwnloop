@@ -59,6 +59,16 @@ pwnloop x "snmpwalk -v2c -c public $T 1.3.6.1.2.1.25.4.2.1.2"   # running proces
 ```
 Process listings frequently contain credentials passed on the command line.
 
+## Kerberos (88)
+
+An open `88` = a KDC = you can enumerate and spray users with **no credential**
+via pre-auth. Reach for `kerbrute` first (built in; see `references/ad.md`):
+
+```bash
+pwnloop x "kerbrute userenum -d <domain> --dc $T /usr/share/seclists/Usernames/xato-net-10-million-usernames-dup.txt"
+```
+It also surfaces AS-REP-roastable accounts as it goes. Mind the lockout policy.
+
 ## LDAP (389/636)
 
 ```bash

@@ -22,6 +22,29 @@ does not belong here — what belongs is what the run *changed*.
 
 ## [Unreleased]
 
+### Added
+- **Local Kerberos relay → RBCD** methodology in `references/ad.md`: the escalation
+  for code execution on a hardened DC as a low-privilege account with no
+  `SeImpersonate` and no ACLs, when every *remote* relay is dead (no egress, no
+  `WebClient`, mandatory SMB/LDAP signing). Covers the local DCOM trigger, CLSID
+  selection and its error codes, the `Certificate Service DCOM Access` signpost,
+  `KrbRelayUp relay` + `getST` S4U, and the "don't kill the slow port-finding
+  step" gotcha.
+- **kerbrute** built into the image (from source — no upstream arm64 release) with
+  userenum/spray/AS-REP usage in `references/ad.md` and a Kerberos (88) block in
+  `references/services.md`.
+- Windows foothold notes in `references/foothold.md`: driving a shell from a tmux
+  listener (a backgrounded `nc` has no stdin), egress ground-truth testing,
+  file-system C2 when TCP egress is filtered, and the app-local `hostfxr.dll`
+  sideload arbitrary-write→RCE primitive. `.NET` zip-slip sink added to
+  `references/source-review.md`.
+
+### Changed
+- Autonomy contract (`SKILL.md`): a genuine, post-enumeration dead end may be
+  surfaced to the operator for a decision or steer — **operator in the loop** —
+  with any outside knowledge declared in that engagement's ledger, exactly as
+  recognition is declared, so shared results stay trustworthy.
+
 ## [1.2.0] — 2026-08-02
 
 Kubernetes and LLM/agent platforms validated in the field. A single-node k3s box

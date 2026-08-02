@@ -98,6 +98,15 @@ pwnloop x "objdump -d binary | head -80"
 For .NET and Java, decompiled source reads like source — apply everything above.
 Hardcoded credentials in a client binary are credentials for the server.
 
+Decompile .NET to IL without a GUI: `ikdasm binary.dll > out.il` (or `monodis`),
+then grep the sinks. A recurring Windows arbitrary-write bug is **zip-slip**:
+`Path.Combine(base, entry.FullName)` + `ExtractToFile`/`SaveAs` with no
+`Path.GetFileName` — a zip entry named `..\..\target\file` escapes `base`
+entirely (`Path.Combine` discards `base` on an absolute/traversing second arg).
+Any code that extracts an archive, or joins a user-supplied filename to a
+directory, into a writable location is a candidate; pair it with an app-local
+`hostfxr.dll` drop for RCE (`references/foothold.md`).
+
 ## Feed it back
 
 Every confirmed sink becomes a request you actually send, and the result — hit

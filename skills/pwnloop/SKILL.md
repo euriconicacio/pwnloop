@@ -108,6 +108,19 @@ legitimate blocking questions.
 8. **Announce each flag the moment you read it**, on its own line in chat, so
    the operator can paste it into the platform without waiting for you to
    finish. Do not batch flags until the end.
+9. **Operator-in-the-loop at a genuine dead end.** On a hard machine you may
+   exhaust every evidenced lead and still be one decision or one tool short. That
+   is a legitimate moment to surface a *precise* status to the operator — what is
+   confirmed, what is ruled out and why, and the specific fork you are stuck on —
+   and to accept a steer (a technique to try, a tool to build, a decision to
+   make). This is not a licence to look up the box's answer or to skip
+   enumeration; it is the escape hatch for after enumeration is done. **If the
+   steer brings in outside knowledge (a hint, a reference, a pointer), declare it
+   in that engagement's ledger** exactly as you would declare recognition — the
+   run then stops being evidence that the loop *discovered* that step, and hiding
+   it makes every other result untrustworthy. Keep such assistance in the
+   (gitignored) engagement ledger; do not fold it into the shared methodology
+   memory as if it were a self-found pattern.
 
 ## Re-running a target
 
