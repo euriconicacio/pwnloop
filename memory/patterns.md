@@ -19,6 +19,16 @@ Format: what to look for → why it pays → the check, in one line each.
 - **Small port count raises the value of each port.** Two or three open ports
   means the path is definitely in one of them — read the application rather than
   reaching for a scanner.
+- **Never triage a scan through a truncated view.** `tail`, `head` and a narrow
+  `grep` are for reading a result you already understand, not for deciding what a
+  scan found. Print the full list of open ports once, read all of it, and only
+  then filter. Running the right scan and then not looking at its output is
+  indistinguishable from never running it.
+- **On a locked-down host, the one non-standard port is the path.** A domain
+  controller serving 80, 1883 or anything else outside the AD set is not
+  incidental — the standard ports are hardened precisely so that the odd one is
+  where the machine wants you. Rank leads by how out of place the service is,
+  not by how familiar the protocol is.
 
 ## Credentials
 
@@ -42,6 +52,13 @@ Format: what to look for → why it pays → the check, in one line each.
   procedure (`xp_dirtree`, `xp_fileexist`, `xp_subdirs`, `LOAD_FILE`,
   `COPY ... FROM PROGRAM`) and make the *service account* authenticate to a UNC
   path you choose. Empty database, full credential. *(Escape)*
+- **If the lockout policy is unreadable, spray one password per account per
+  window — not a list.** `--pass-pol` needs a credential you do not have yet, so
+  the threshold is unknown, and on a hardened domain it can be as low as three.
+  Kerberos pre-auth answers `KDC_ERR_CLIENT_REVOKED` once an account is locked,
+  which is the same code as "disabled" — by the time you can read it, the damage
+  is done. A locked account cannot be used by the intended path either, so this
+  mistake can end the engagement rather than merely delay it.
 - **Application error logs record the username that was supplied, verbatim.**
   SQL Server, and most auth stacks, log failed logins with the typed name — so a
   password pasted into the username field is persisted in cleartext. Grep every
@@ -56,6 +73,10 @@ Format: what to look for → why it pays → the check, in one line each.
 - **Unauthenticated diagnostic features are the intended path more often than
   a CVE is.** Anything that runs a capture, a ping, a lookup or a conversion on
   the host.
+- **Fuzz for files, not only directories.** A static site's real content may be
+  a file no page links to. Run a second pass with a *files* wordlist and media
+  or document extensions (`jpg,png,mp4,pdf,docx,zip`) — an unreferenced image on
+  an otherwise empty IIS root carried the hostnames the whole engagement needed.
 
 ## Privilege escalation
 
@@ -106,6 +127,16 @@ Format: what to look for → why it pays → the check, in one line each.
 - **`admincount=False` on a privileged group means its DACL is writable.**
   AdminSDHolder is not protecting it, so a lower tier with `GenericAll`/`WriteDacl`
   over it can rewrite its rights. *(Forest)*
+- **When RPC, LDAP and RID enumeration are all denied, look for a forge.** A
+  self-hosted Git service (Gogs, Gitea) exposes its user list at `/explore/users`
+  without authentication, and on a small estate those accounts are the domain
+  accounts. Confirm each against the Kerberos oracle before using them —
+  `KDC_ERR_C_PRINCIPAL_UNKNOWN` means it exists only in the forge.
+- **Kerberos pre-auth is a user-enumeration oracle that needs no credential.**
+  Invalid principal → `KDC_ERR_C_PRINCIPAL_UNKNOWN`; valid one →
+  `doesn't have UF_DONT_REQUIRE_PREAUTH`. It works when SAMR, RID cycling and
+  anonymous LDAP are all refused, and it is how you validate a name list from any
+  other source.
 - **`BUILTIN\Certificate Service DCOM Access` in a user's token means AD CS is
   reachable.** That group membership is the artifact that justifies running
   `certipy find -vulnerable`; check `whoami /all` for it on every Windows user
@@ -127,6 +158,14 @@ Format: what to look for → why it pays → the check, in one line each.
 - **A missing tool costs more than the time to install it.** When a step stalls
   on tooling, add the package to `docker/packages.txt` in the same session —
   that is what the second loop is for.
+- **Responder holds 445 and 139, which breaks your own SMB client.** With it
+  running, every `nxc smb` authentication returns "NETBIOS connection timed out"
+  and reads exactly like target-side rate limiting. Stop Responder before
+  touching SMB, and suspect it first when SMB worked five minutes ago.
+- **Backticks in a string passed through `pwnloop x` are substituted by the
+  outer shell.** Markdown written into a heredoc silently loses every
+  `` `word` `` as a failed command. Use the Write/Edit tools for file content
+  and reserve the wrapper for actual commands.
 - **A silent capture tool is not a failed attack — put `tcpdump` on the
   interface.** `impacket-smbserver` captured a NetNTLMv2 correctly while
   printing nothing at all. The wire is ground truth: a 553-byte SMB
@@ -144,6 +183,12 @@ Format: what to look for → why it pays → the check, in one line each.
 
 ## Method
 
+- **Memory read at the start is not memory applied at the moment of acting.**
+  Every rule in this file was already here when it was broken again: `pkill -f`
+  matched its own shell a second time, and the lockout rule was violated by the
+  run that had just read it. Before any command that is destructive, irreversible
+  or noisy — spraying, killing, writing to a target — stop and check whether a
+  rule covers it. The expensive mistakes are never the unknown ones.
 - **The vulnerability with the CVE number is rarely the one that decides how bad
   the outcome is.** On both machines so far, the CVE or the flashy web bug got a
   low-privileged shell, and a local privilege boundary somebody widened for

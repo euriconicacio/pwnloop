@@ -129,6 +129,29 @@ pwnloop x "rpcclient -U '' -N $T -c 'enumdomusers'"
 pwnloop x "rpcclient -U '' -N $T -c 'querydispinfo'"
 ```
 
+## MQTT (1883, 8883/TLS)
+
+A message broker on a server that has no business running one — a domain
+controller, say — is worth more than any web port on the same host. Brokers are
+routinely deployed with anonymous access on both read *and* write.
+
+```bash
+pwnloop x "nmap -p1883 --script mqtt-subscribe $T"
+pwnloop x "mosquitto_sub -h $T -p 1883 -t '#' -t '\$SYS/#' -v"      # everything
+pwnloop x "mosquitto_pub -h $T -p 1883 -t 'some/topic' -m 'x' -d"   # write test
+```
+
+Subscribe to `#` *and* `$SYS/#` — the second is the broker's own status tree and
+leaks connected client IDs, source addresses and usernames. Telemetry payloads
+routinely carry internal hostnames, IP ranges and health-check URLs, which is a
+free network map from an unauthenticated position.
+
+If publishing is allowed, check whether anything *consumes* what you write before
+building on it: a topic whose payload contains a `url` field is only a coercion
+primitive if some agent fetches it. Publish a URL pointing at your listener and
+watch — if nothing calls back, the topics are publish-only telemetry and writing
+to them buys you nothing.
+
 ## Anything unusual
 
 Netcat the port and read the banner before assuming. Custom services on high

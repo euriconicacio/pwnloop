@@ -314,7 +314,18 @@ make the changes rather than describing them:
 Nothing to add is a legitimate outcome; say so rather than inventing an entry.
 A memory file padded with restatements of the obvious costs every future run.
 
-### 9. Close out
+### 9. Name the engagement
+Now — and only now — ask the operator what the machine is called, and rename the
+directory from the address to that name (`engagements/10-129-51-240/` →
+`engagements/ghostlink/`). Update the ledger's first line to match.
+
+Asking at the start would hand you the recall trigger the whole discipline
+exists to avoid. Asking at the end costs nothing: the work is done, the search
+order is already on record, and an address is a terrible way to find an
+engagement six months later. If the name collides with an existing directory,
+suffix it (`ghostlink-2`) rather than merging — see *Re-running a target*.
+
+### 10. Close out
 End with a compact summary table in chat — this is what the operator reads
 when they come back to the terminal:
 

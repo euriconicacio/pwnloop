@@ -74,6 +74,22 @@ Then fuzz for more subdomains once you know the base domain — see
 
 ## Reading the output
 
+**Print the full port list once and read all of it.** `tail -20` on a scan
+result is how a service gets missed — a broker, a database, an admin panel
+sitting in the middle of a list you only saw the end of. Filtering is for a
+result you already understand, not for deciding what the scan found. Running the
+right scan and then not reading its output is indistinguishable from not running
+it.
+
+```bash
+pwnloop x "grep -E '^[0-9]+/(tcp|udp) +open' /engagements/$NAME/scans/nmap-all.txt"
+```
+
+Then ask which of those ports has no business being there. On a hardened host the
+standard services are hardened; the one service that does not belong to the
+host's role — MQTT on a domain controller, IIS on a database server — is where
+the path usually is.
+
 For each open port, record in FINDINGS.md: port, protocol, service, exact
 version string. The version string is the input to `searchsploit`:
 

@@ -83,9 +83,26 @@ pwnloop x "hydra -L users.txt -p 'Winter2025!' ssh://$T -t 4"
 pwnloop x "hydra -l admin -P /usr/share/wordlists/rockyou.txt $T http-post-form '/login:user=^USER^&pass=^PASS^:Invalid'"
 ```
 
-Check the lockout policy first (`nxc smb $T -u u -p p --pass-pol`). Never brute
-force SSH as root on a lab box — it is not the intended path and it is noisy
-enough to disrupt other users of a shared network.
+Check the lockout policy first (`nxc smb $T -u u -p p --pass-pol`).
+
+**When the policy is unreadable — which is the normal case before you hold any
+credential — spray one password per account per window, not a list.** The
+threshold on a hardened domain can be three. Kerberos reports a locked account as
+`KDC_ERR_CLIENT_REVOKED`, the same code it uses for a disabled account, so you
+only learn the limit by crossing it. And a locked account is unusable by the
+*intended* path as well, so this turns a delay into a dead engagement until the
+lockout window expires or the box is reset.
+
+```bash
+# acceptable without a policy: one candidate, all accounts, then stop and reassess
+for u in $(cat users.txt); do
+  pwnloop x "faketime \"\$FT\" impacket-getTGT dom.htb/$u:'OneCandidate1' -dc-ip $T" 2>&1 \
+    | grep -E 'Saving ticket|KDC_ERR_'
+done
+```
+
+Never brute force SSH as root on a lab box — it is not the intended path and it
+is noisy enough to disrupt other users of a shared network.
 
 ## After a crack
 

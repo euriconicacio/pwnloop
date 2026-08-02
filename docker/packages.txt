@@ -35,6 +35,7 @@ openvpn
 openresolv
 
 # recon
+mosquitto-clients
 nmap
 masscan
 netcat-traditional
@@ -94,6 +95,7 @@ seclists
 wordlists
 
 # analysis
+ffmpeg
 tshark
 binwalk
 exiftool
