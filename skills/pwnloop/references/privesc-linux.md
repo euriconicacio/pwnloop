@@ -126,6 +126,11 @@ If `/.dockerenv` exists or the cgroup shows docker, check for:
 - `--privileged` (check `capsh --print` for `cap_sys_admin`) → cgroup release_agent escape
 - host filesystem mounted somewhere under `/mnt`
 
+If there is a Kubernetes service account (`/var/run/secrets/kubernetes.io/…`) or
+the host runs a cluster (k3s/kubeadm/microk8s), the container is usually one step
+of a larger chain — enumerate the SA's RBAC and the kubelet before reaching for a
+local exploit. See `references/kubernetes.md`.
+
 ## Kernel exploits — last resort
 
 Only when enumeration is genuinely exhausted. They crash lab boxes and

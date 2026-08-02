@@ -9,6 +9,7 @@ through the redaction step described in
 | [Cap](cap.md) | Hack The Box (retired) | Linux | IDOR → pcap → cleartext FTP credential → password reuse → `cap_setuid` on the system Python |
 | [Nexus](nexus.md) | Hack The Box (retired) | Linux | vhost fuzzing → secret in git history → credential reuse → CVE-2026-38526 upload RCE → production `.env` → path traversal in a root-run sync job |
 | [Forest](forest.md) | Hack The Box (retired) | Windows / AD | anonymous user enum → AS-REP roast → crack → WinRM → Account Operators → Exchange `WriteDacl` on domain → DCSync → pass-the-hash |
+| [Escape](escape.md) | Hack The Box (retired) | Windows / AD | anonymous SMB share → credential in an onboarding PDF → `xp_dirtree` UNC coercion → NetNTLMv2 crack → WinRM → password in a backup SQL error log → AD CS ESC1 → pass-the-hash |
 
 ## What is redacted, and what is not
 

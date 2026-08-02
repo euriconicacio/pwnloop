@@ -9,6 +9,30 @@ You are running a black-box engagement against a single lab host. The operator
 wants to hand you an IP and watch. Work continuously, narrate findings as they
 land, and only come back with a question when you are genuinely blocked.
 
+## Operating contract
+
+This is what the operator expects of the run itself, whether it was started as a
+slash command or by invoking this skill directly — both must behave the same:
+
+- **Work from the address alone.** Do not ask what the machine is called; the
+  name is a recall trigger the operator is withholding on purpose. Name the
+  engagement directory after the address. If the box names itself mid-run and you
+  recognise it, record that in the ledger and keep going. See *Discovery
+  discipline*.
+- **Confirm once, in one line, then go:** VPN state, target reachability, and the
+  engagement directory you created. Do not wait for acknowledgement.
+- **Do not pause between phases and do not ask permission per command** — the
+  target is pre-authorized. Move straight from recon into enumeration into
+  exploitation.
+- **Report by appending to `FINDINGS.md` as discoveries land.** In chat, give a
+  one-or-two-line status at each phase transition and nothing longer — the
+  operator is reading the ledger, not the chat.
+- **Print each flag in chat the moment you read it,** on its own line, so it can
+  be submitted while you keep working.
+- **Come back only when genuinely blocked:** VPN down, target unreachable for
+  >5 min (may need a platform reset), a real scope question, or three full
+  enumeration loops with no new leads.
+
 ## Scope contract (check once, then stop asking)
 
 Valid targets: RFC1918 / CGNAT addresses reachable over the HTB VPN (`10.10.10.x`,
@@ -247,7 +271,9 @@ reaching for privesc scripts: home directories, config files with credentials,
 readable databases, `sudo -l`, cron, running processes. Reuse every credential
 you find against every service and user — password reuse is the most common
 intended path. See `references/privesc-linux.md`,
-`references/privesc-windows.md`, `references/ad.md`.
+`references/privesc-windows.md`, `references/ad.md`. If the foothold landed in a
+container or the host runs a cluster (k3s/kubeadm/microk8s), see
+`references/kubernetes.md`; for flow/agent/MCP platforms, `references/llm-apps.md`.
 
 ### 5. Privilege escalation
 Work the enumeration output, not a blind exploit list. Prefer misconfiguration
@@ -358,12 +384,14 @@ Read these on demand, not upfront:
 - `references/recon.md` — scan strategy, hostname/vhost handling
 - `references/web.md` — directory/vhost fuzzing, common web vulns, auth bypass
 - `references/api.md` — REST/GraphQL discovery, JWT attacks, IDOR, race conditions, SSRF
+- `references/llm-apps.md` — Langflow/Flowise/MCP platforms: unauth flow-execution RCE, alg:none, tool registries
 - `references/source-review.md` — reading recovered source: secrets, sinks, authorization gaps
 - `references/cracking.md` — hash identification, john/hashcat formats, spraying strategy
 - `references/services.md` — per-port playbooks (SMB, FTP, SSH, DNS, SNMP, LDAP, SQL, Redis, RPC, WinRM)
 - `references/foothold.md` — reverse shells, TTY upgrade, file transfer both ways
 - `references/artifacts.md` — mining recovered files (pcaps, archives, git, key material) for credentials
 - `references/privesc-linux.md` — sudo, SUID, capabilities, cron, containers
+- `references/kubernetes.md` — SA RBAC, kubelet exec via `get nodes/proxy`, privileged-pod and container escape
 - `references/privesc-windows.md` — tokens, services, AlwaysInstallElevated, UAC
 - `references/ad.md` — AS-REP/Kerberoast, BloodHound-less enumeration, DCSync
 - `references/pivoting.md` — chisel, ssh tunnels, proxychains

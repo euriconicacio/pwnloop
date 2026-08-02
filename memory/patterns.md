@@ -64,6 +64,18 @@ Format: what to look for → why it pays → the check, in one line each.
   password pasted into the username field is persisted in cleartext. Grep every
   readable log for `Logon failed`/`Login failed` and read the *next* line.
   *(Escape)*
+- **After any web/app RCE, read the process environment before the filesystem.**
+  `/proc/self/environ` and the service's systemd `EnvironmentFile` (find it in
+  `systemctl cat <svc>`) routinely hold the admin password and signing keys the
+  app runs with — and that password is the first thing to spray at SSH and every
+  other account. *(Fireflow: `LANGFLOW_SUPERUSER_PASSWORD` → SSH as the human
+  user)*
+- **A service that advertises its accepted JWT algorithms is telling you how to
+  forge one.** If a `/version`/`/config` endpoint lists `"none"` among supported
+  algs, mint `{"alg":"none"}` with `role:admin` and an empty signature before
+  anything harder — hand-rolled verifiers that special-case `alg=="none"` with
+  `verify_signature:false` are common. Only lowercase `none` tends to pass.
+  *(Fireflow: MCP tool registry)*
 
 ## Web
 
@@ -77,12 +89,36 @@ Format: what to look for → why it pays → the check, in one line each.
   a file no page links to. Run a second pass with a *files* wordlist and media
   or document extensions (`jpg,png,mp4,pdf,docx,zip`) — an unreferenced image on
   an otherwise empty IIS root carried the hostnames the whole engagement needed.
+- **Pull `/openapi.json` and diff the writable route against the read-only one.**
+  It is often served unauthenticated even when the app requires login, and it
+  names every route's declared `security`. A build/run route with `security:
+  None` that accepts the same object a public read handed you is RCE in these
+  flow/agent builders, whose nodes carry their own code. *(Fireflow: Langflow
+  `build_public_tmp` re-runs a caller-supplied flow)*
 
 ## Privilege escalation
 
 - **Run `getcap -r /` before any enumeration script.** One command, five lines
   of output, and on a modern Linux box capabilities are a more common escalation
   than SUID binaries. *(Cap: `cap_setuid` on the system Python)*
+- **`get nodes/proxy` on a pod service account is kubelet exec, not just reads.**
+  Enumerate the SA with SelfSubjectRulesReview/AccessReview; that one verb reaches
+  the kubelet (`:10250` from the node, or via the apiserver `nodes/<n>/proxy/`).
+  A GET to `/exec/<ns>/<pod>/<c>` returning **`500 Upgrade request required`**
+  (not 403) means authz passed — finish it with a WebSocket (`v5.channel.k8s.io`,
+  falling back to `v4`). Target any pod with `privileged:true`+`runAsUser:0`
+  (monitoring/logging DaemonSets). *(Fireflow: node-exporter → node root)*
+- **Escaping a distroless/privileged container with host `/` mounted: invoke the
+  host loader explicitly.** No shell or `nsenter` in the container, but the host
+  bind-mount has them — run
+  `/host/root/lib64/ld-linux-x86-64.so.2 --library-path <host libdirs> /host/root/usr/bin/nsenter -t 1 -m -u -i -n -p -- /bin/bash -c '…'`.
+  With `hostPID`+privileged+uid 0 that enters host init's namespaces as node root.
+  *(Fireflow)*
+- **A pinned-vulnerable version is not automatically a usable exploit.** Confirm
+  the precondition before building the PoC: sudo in the CVE-2025-32463 range still
+  refuses `-R` unless the user has a sudoers rule permitting chroot — check
+  `sudo -l` with the real password, not `-n`, before committing to it. *(Fireflow:
+  sudo 1.9.15p5, no chroot rule → dead end)*
 - **Read root-run scripts you cannot write.** A world-readable script executed
   by root tells you what root does with data you might control. Confirm the user
   with the systemd unit's `User=` and the owner of its log file. *(Nexus)*

@@ -22,13 +22,53 @@ does not belong here — what belongs is what the run *changed*.
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-08-02
+
+Kubernetes and LLM/agent platforms validated in the field. A single-node k3s box
+fell through an unauthenticated Langflow flow-execution RCE, password reuse, an
+MCP tool registry with a JWT `alg:none` bypass, and finally the kubelet exec API
+reached through a `get nodes/proxy` service account into a privileged pod — a
+chain the methodology had no coverage for at the time and now does.
+
 ### Added
 
-- `pwnloop engagements` — lists past runs with the target each one turned out to
-  be, whether both flags fell, and when. Engagement directories are named after
-  the address, which is exact during a run and useless as an archive key months
-  later; the listing is derived from what each ledger already recorded rather
-  than from a second index file that could drift out of date.
+- **`references/kubernetes.md`** — the biggest gap this release closes. Service
+  account RBAC enumeration (`SelfSubjectRulesReview`/`AccessReview`), the
+  node-side hunt for admin kubeconfigs, and the in-pod escalation path: how
+  `get nodes/proxy` alone reaches the kubelet exec API (GET `/exec` returning
+  *"Upgrade request required"* is authz passing, not a denial), finishing it over
+  a stdlib WebSocket (`v5`→`v4` channel fallback), triaging pod specs for a
+  privileged exec target, and distroless container escape by invoking the host
+  loader to run the host's `nsenter`.
+- **`references/llm-apps.md`** — flow/agent/MCP platforms (Langflow, Flowise,
+  Dify, MCP servers) as an RCE-first target class: pulling `/openapi.json` and
+  diffing a `security: None` build route against the public read it mirrors, the
+  "public object that gets executed" pattern, JWT `alg:none` forgery, hard-coded
+  secrets in app source, and the reminder to treat model/tool output as data.
+- `references/privesc-linux.md` now hands off to `references/kubernetes.md` when a
+  service account or a local cluster is present, rather than treating containers
+  as a five-line afterthought.
+- **`writeups/escape.md`** — the redacted Escape (sequel.htb) write-up:
+  anonymous-SMB PDF credential → `xp_dirtree` coercion → NetNTLMv2 → WinRM →
+  password in a backup SQL error log → AD CS ESC1 → pass-the-hash. Flags out, IPs
+  and the recovered NT hash generalised.
+
+### Changed
+
+- **The engagement's operating contract now lives in the skill**, not only in the
+  slash command. Invoking the `pwnloop` skill directly and running `/pwnloop`
+  now behave identically — address-only start, one-line pre-flight confirmation,
+  one-or-two-line phase updates, flags printed on sight. This removes the trap
+  where picking the skill from the menu dropped the command's operator framing.
+
+### Methodology
+
+- Promoted five cross-engagement patterns into `memory/patterns.md`: read the
+  process environment after a web RCE; forge `alg:none` when a service advertises
+  it; diff `/openapi.json` for a `security: None` executor route; `get nodes/proxy`
+  is kubelet exec; distroless escape via the host loader; and the reminder that a
+  pinned-vulnerable version (sudo CVE-2025-32463) is not a usable exploit without
+  its precondition.
 
 ## [1.1.0] — 2026-08-02
 
