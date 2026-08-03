@@ -16,6 +16,8 @@ through the redaction step described in
 | [Soulmate](soulmate.md) | Hack The Box (retired) | Linux | CrushFTP CVE-2025-31161 auth bypass → admin VFS `file:///` mount (root-in-container) → `PUT` webshell into bind-mounted webroot → `www-data` → root-owned Erlang/OTP SSH CVE-2025-32433 pre-auth RCE → SUID bash |
 | [Baby](baby.md) | Hack The Box (retired) | Windows / AD | anonymous LDAP bind → password in a `description` field → hidden accounts via group `member` attrs → `PASSWORD_MUST_CHANGE` reset over SAMR → WinRM → Backup Operators on the DC → `diskshadow` + `robocopy /b` NTDS.dit → pass-the-hash |
 | [Orion](orion.md) | Hack The Box (retired) | Linux | Craft CMS CVE-2025-32432 (Yii `PhpManager` gadget → blind `require`) → PHP session poisoning over a raw socket → `www-data` → Craft `.env` + cracked bcrypt → SSH password reuse → root-run inetutils telnetd CVE-2026-24061 `USER` argument injection → `login -f root` |
+| [Support](support.md) | Hack The Box (retired) | Windows / AD | `guest` SMB share → XOR-obfuscated LDAP password in a custom .NET tool → cleartext password in a user's `info` attribute → WinRM → `Shared Support Accounts` `GenericAll` on `DC$` + `MachineAccountQuota` → RBCD → S4U2Proxy → DCSync |
+| [Snapped](snapped.md) | Hack The Box (retired) | Linux | unauth Nginx UI `GET /api/backup` returning its own AES key in a header → node secret = API-auth bypass + bcrypt hashes → password reuse on SSH → PackageKit CVE-2026-41651 (Pack2TheRoot) `InstallFiles` TOCTOU → SUID root |
 
 ## What is redacted, and what is not
 

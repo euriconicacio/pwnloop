@@ -98,6 +98,29 @@ pwnloop x "objdump -d binary | head -80"
 For .NET and Java, decompiled source reads like source — apply everything above.
 Hardcoded credentials in a client binary are credentials for the server.
 
+**When a binary obfuscates a secret, read the routine — do not reconstruct it
+from the strings.** `strings -el` on a managed assembly routinely hands you every
+operand at once: the blob, the key, the account it belongs to. That is exactly
+when guessing is tempting and expensive. The transform has more moving parts than
+the strings show — a trailing constant XOR, `Encoding.ASCII` vs `Encoding.Default`
+on either side, the key used as *bytes* rather than as its ASCII, a length or
+offset trim — and a wrong guess presents as "the credential is invalid", which
+sends you off to re-enumerate a service that was never the problem. Disassembling
+is a minute:
+
+```bash
+pwnloop x "apt-get install -y mono-utils && monodis --output=out.il App.exe"
+pwnloop x "grep -n -A60 '<methodName>' out.il"      # the decrypt routine
+pwnloop x "grep -n -B5 -A20 \"'.cctor'\" out.il"     # its constants
+```
+
+IL is readable without knowing IL: `ldstr` is the literal, `ldsfld` names the
+field it lands in, `xor`/`add`/`call FromBase64String` are the operations in
+order, and `ldc.i4 <n>` is any magic constant. Reimplement exactly what the
+method does, in that order. Anything shipped to users is decryptable by them —
+treat "encrypted" credentials in a distributed binary as cleartext, and say so in
+the report rather than calling it weak crypto.
+
 Decompile .NET to IL without a GUI: `ikdasm binary.dll > out.il` (or `monodis`),
 then grep the sinks. A recurring Windows arbitrary-write bug is **zip-slip**:
 `Path.Combine(base, entry.FullName)` + `ExtractToFile`/`SaveAs` with no

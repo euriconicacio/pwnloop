@@ -47,6 +47,15 @@ Sudo `< 1.9.5p2` → Baron Samedit (CVE-2021-3156), a heap overflow reachable wi
 **no sudo rights at all** (`sudoedit -s '\' $(perl -e 'print "A"x1000')` to
 confirm it segfaults). `sudo -l` needing no password after you already ran one →
 a live sudo token you can reuse.
+Sudo `1.9.14`–`1.9.17` → chroot NSS load (CVE-2025-32463), also reachable with
+**no sudo rule at all** — `sudo -R <evil_chroot> <cmd>` loads
+`libnss_/<svc>.so.2` from a chroot you control before authorization runs. But the
+upstream version string lies: a distro can backport the fix and keep the number,
+so **pin the package version** (`dpkg -l sudo` / `rpm -q sudo`), not `sudo -V`. A
+suffix like `1.9.15p5-3ubuntu5.24.04.2` is the patched security update and the
+exploit fails cleanly — verify empirically before spending time. When you do
+build the NSS module, compile it with `-nostdlib` and raw `syscall`s so it carries
+no glibc-version symbols and `dlopen` works across target glibc versions.
 
 Quick classes the sweep already surfaced:
 - **Writable `/etc/passwd`** → add a root-uid user with a known hash
@@ -56,7 +65,21 @@ Quick classes the sweep already surfaced:
 - **PwnKit (CVE-2021-4034)** — `pkexec` present and SUID is the give-away; a
   config bug, not a kernel bug, so it's safe to try early on older images.
 - **polkit/D-Bus** → `busctl list` for services running as root that expose a
-  method you can call (e.g. `CreateUser`, package-install actions).
+  method you can call (e.g. `CreateUser`, package-install actions). A root daemon
+  reachable by any local user over the system bus is a privesc surface even with
+  no group or sudo right: the classes are a permissive polkit rule (a method that
+  returns `yes`/`auth_admin_keep` for `unix-user:*`), an argument-injection into
+  what the daemon runs, and a **TOCTOU race** where a "safe" call authorises and a
+  second call swaps in a dangerous payload before the check resolves. A
+  *package-manager* daemon (PackageKit `InstallFiles`, `packagekitd`) is the
+  highest-value target because "install a package as root" is arbitrary code via a
+  maintainer script — so a version-gated CVE there beats any kernel bug. The
+  install pattern is one-line: a `.deb` whose `postinst` (or `.rpm` `%post`) does
+  `install -m 4755 /bin/bash /var/tmp/.x`, then `bash -p`. Prereqs to check on the
+  target before building: `python3-gi` (the D-Bus client), `dpkg-deb`/`rpmbuild`,
+  and a drop dir with neither `nosuid` nor `noexec` (`/dev/shm` is usually
+  `nosuid`; `/var/tmp` usually is not). *(snapped: PackageKit `InstallFiles`
+  SIMULATE→NONE flag race, CVE-2026-41651)*
 
 ## SUID / capabilities
 
@@ -76,6 +99,17 @@ ls -la /etc/cron.d /etc/cron.*/ /etc/systemd/system/*.service
 A root cron running a script you can write, or running a relative path with a
 writable PATH component, is a direct win. Also check for `tar`/`rsync`
 wildcards in cron commands.
+
+**A suggestive directory is not a vulnerability until you find its consumer.** A
+non-default world-writable (often setgid) directory owned by a service group is
+exactly the shape of a "root job ingests files you can drop here" privesc, and it
+will pull you in. Before spending time on it, *prove something reads it*: grep
+`/etc`, all unit files and `.path` watchers for the path, `grep -rl` the path
+across binaries in `/usr/local`,`/usr/bin`,`/opt`, check for an open handle
+(`ls -l /proc/*/fd | grep <dir>`), and drop a canary and watch it with `pspy` — if
+nothing touches it in a few minutes it is a decoy, park it and move on. Match the
+`pspy` interval to the suspected job; a 60 s window misses a 2–3 min cron, so
+watch for 2–3× the longest plausible period before concluding "no job".
 
 **Read any custom script you can, even when you cannot write it.** A
 world-readable script run by root is worth more than a config file you cannot

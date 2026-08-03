@@ -22,6 +22,54 @@ does not belong here — what belongs is what the run *changed*.
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-08-03
+
+Two engagements (Support, Snapped) produced new privilege-escalation methodology
+and two published write-ups. The reference additions are what make this a minor:
+a run should be able to act on them against a different box.
+
+### Added
+- **Reference: D-Bus / system-daemon privilege escalation** (`references/privesc-linux.md`).
+  A root daemon reachable by any local user over the system bus is a privesc
+  surface even with no group or sudo right — the classes being a permissive polkit
+  rule, argument injection, and a **TOCTOU race** (a "safe" call authorises, a
+  second call swaps in a dangerous payload before the check resolves). A
+  package-manager daemon is the highest-value target because "install a package as
+  root" is arbitrary code via a maintainer script, so a version-gated CVE there
+  beats any kernel bug. Written as a class with `PackageKit InstallFiles`
+  (CVE-2026-41651, "Pack2TheRoot") as the compact example, plus the prereqs to
+  check before building (`python3-gi`, `dpkg-deb`/`rpmbuild`, a `nosuid`/`noexec`-free
+  drop dir).
+- **Reference: verify a pinned sudo version is not a backported fix**
+  (`references/privesc-linux.md`). Added CVE-2025-32463 (chroot NSS load) to the
+  sudo section — reachable with **no** sudo rule — with the caveat that the
+  upstream version string lies: pin the *package* version (`dpkg -l sudo`), because
+  a distro can backport the fix and keep the number. Includes the `-nostdlib`
+  syscall-only build so the malicious `libnss_` module carries no glibc-version
+  symbols and `dlopen`s across targets.
+- **Reference: prove a suspicious directory has a consumer before investing**
+  (`references/privesc-linux.md`). A non-default world-writable/setgid directory is
+  a compelling but common decoy; grep units and binaries for the path, check for an
+  open handle, and drop a canary watched by `pspy` (for 2–3× the longest plausible
+  cron period) before spending time on it.
+- **Reference: sweep LDAP free-text attributes for stored secrets**
+  (`references/ad.md`). Passwords land in `info`, `comment`, `title`,
+  `extensionAttribute*` as often as `description`, and all are readable by any
+  authenticated user. Dump every object whole and look at which attributes are
+  populated at all rather than grepping for the one you expect.
+- **Reference: read the deobfuscation routine, do not guess it from strings**
+  (`references/source-review.md`). When a distributed binary obfuscates a secret,
+  `strings -el` hands you every operand at once and a wrong guess reads as "invalid
+  credential"; `monodis` + reading the `.cctor` for the constants is a minute.
+- **Published write-ups: Support, Snapped** (`writeups/`) — redacted narratives for
+  two more retired machines. *Support* (Windows/AD): `guest` SMB share → XOR-encoded
+  LDAP password in a custom .NET tool → cleartext password in a user's `info`
+  attribute → WinRM → `Shared Support Accounts` `GenericAll` on `DC$` + MAQ → RBCD →
+  S4U2Proxy → DCSync. *Snapped* (Linux): unauthenticated Nginx UI `GET /api/backup`
+  that returns its own AES key in the `X-Backup-Security` header → node secret =
+  API-auth bypass → password reuse on SSH → PackageKit CVE-2026-41651 (Pack2TheRoot)
+  `InstallFiles` TOCTOU → SUID root.
+
 ## [1.4.3] — 2026-08-03
 
 Cosmetic release. The banner rendered wrong in the one place it is guaranteed to
@@ -368,7 +416,8 @@ machines, both Linux (one easy, one medium).
 - Small sample, and no machine has defeated the loop yet — so its failure mode
   is still unobserved.
 
-[Unreleased]: https://github.com/euriconicacio/pwnloop/compare/v1.4.3...HEAD
+[Unreleased]: https://github.com/euriconicacio/pwnloop/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.5.0
 [1.4.3]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.4.3
 [1.4.2]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.4.2
 [1.4.1]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.4.1

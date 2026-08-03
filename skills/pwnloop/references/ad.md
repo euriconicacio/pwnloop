@@ -66,6 +66,35 @@ Password spraying — one password, every user, watching the lockout policy:
 pwnloop x "nxc smb $T -u users.txt -p 'Password123' --continue-on-success"
 ```
 
+### Sweep the directory's free-text attributes for stored secrets
+
+Administrators park passwords in whatever field the console puts in front of
+them, and most of those fields are readable by every authenticated user — they
+are not confidential-flagged and nothing warns you when you type into them.
+`description` is the famous one and therefore the one that gets cleaned up;
+`info` (the "Notes" box in ADUC), `comment`, `streetAddress`, `title` and the
+`extensionAttribute*` set are the same exposure with less attention on them.
+
+Do not grep for the attribute you expect. Dump every object whole, then look at
+which attributes are *populated at all* — on a small estate the anomaly is
+visible by eye, and it costs one command:
+
+```bash
+pwnloop x "ldapsearch -x -H ldap://$T -D 'user@dom.htb' -w 'pass' \
+  -b 'DC=dom,DC=htb' '(objectClass=user)' > /engagements/$NAME/scans/ldap-users-full.txt"
+pwnloop x "grep -iE '^(sAMAccountName|description|info|comment|title|department|streetAddress|extensionAttribute[0-9]*|memberOf|adminCount|servicePrincipalName|userAccountControl):' \
+  /engagements/$NAME/scans/ldap-users-full.txt | sort | uniq -c | sort -rn"
+```
+
+An attribute with a count of 1 across twenty otherwise-identical user objects is
+the one somebody typed by hand. Then read that object in full — the same
+enumeration usually shows its `memberOf`, which tells you immediately whether the
+credential is worth anything (`Remote Management Users` = WinRM, a non-default
+group = go read its ACEs).
+
+Same sweep is worth running against computer and group objects, and against
+`OU`/GPO descriptions.
+
 ## Enumerating ACL paths without a BloodHound GUI
 
 ```bash

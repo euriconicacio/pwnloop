@@ -376,7 +376,7 @@ on demand rather than all at once:
 | `foothold.md` | reverse shells, TTY upgrade, file transfer both directions |
 | `evasion.md` | AMSI, Constrained Language Mode, AppLocker/WDAC, Defender on a lab box |
 | `artifacts.md` | mining downloaded files — pcaps, archives, git history, key material |
-| `privesc-linux.md` | sudo, SUID, capabilities, cron and timers, PATH, polkit |
+| `privesc-linux.md` | sudo, SUID, capabilities, cron and timers, PATH, polkit, root D-Bus daemons |
 | `privesc-windows.md` | token privileges and potato selection, services, DPAPI, LAPS/gMSA, UAC |
 | `containers.md` | container escape: `docker.sock`, privileged/caps, `release_agent`, host mounts |
 | `kubernetes.md` | service-account RBAC, kubelet exec, privileged-pod escape, secrets and etcd |
