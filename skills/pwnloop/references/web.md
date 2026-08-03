@@ -85,8 +85,37 @@ HMAC secret (crack with `john`), IDOR on user IDs, password reset token
 predictability, registration of an admin-named account.
 
 **Known-CMS** — WordPress → `wpscan --url ... -e ap,at,u`. Anything else, get
-the exact version and `searchsploit` it. Lab CMS installs are usually a single
-CVE away from RCE.
+the exact version and `searchsploit` it — then **also GitHub-search the CVE**
+(`searchsploit` misses recent ones). Lab CMS installs are usually a single CVE
+away from RCE. Fingerprint from headers/error pages (`X-Powered-By`), the admin
+CP path, and cookie names even when the front page is a static template.
+
+**Framework object-injection → include/`require` RCE.** When an endpoint builds
+an object from user-supplied structure (Yii `createObject`, Symfony/Laravel
+service definitions, Java/JS reflection), the win is instantiating a class whose
+constructor/init does a file `include`/`require` or a `system` call. Method: find
+the deserialization sink, read the framework's object-config rules (e.g. a
+`__class` key often overrides the declared `class`, and the named `class` must be
+a legal type for the slot or it won't attach), then point the gadget's file
+argument at attacker-controlled content. *Example — Craft/Yii CVE-2025-32432:*
+`POST actions/assets/generate-transform` with `handle[as x]` =
+`{class: craft\behaviors\FieldLayoutBehavior, __class: yii\rbac\PhpManager,
+__construct(){itemFile}}` → `PhpManager::init()`→`require(itemFile)`; CSRF from
+`/actions/users/session-info`. Three traps that generalise to **any** blind
+`require`/include RCE:
+- **Output is blind** — the framework buffers/discards the include's output (the
+  verbose error page is a `$_SESSION`/context dump, not your code's output).
+  Prove exec with **side-effects only**: a `sleep` timing oracle, an HTTP/DNS
+  callback, or a file write — never by grepping the response.
+- **Get PHP into a readable file via session poisoning.** `GET
+  ?p=admin/dashboard&a=<?=...?>` stores the payload as the session `__returnUrl`
+  in `/var/lib/php/sessions/sess_<sid>`; then point `itemFile` there. The web
+  server's own logs are often `root:adm` and unreadable by `www-data`, so
+  log-poisoning fails where session-poisoning works.
+- **Inject the raw `<?php`/`<?=` tag over a raw socket, not requests/curl** —
+  HTTP clients percent-encode `<`/`>`, and a stored `%3C?php` never executes.
+  Keep the stored payload space-free (`<?=` needs no trailing space; pass the
+  command through a `$_GET` param read at trigger time).
 
 **SSTI — confirm the engine before the payload.** `{{7*7}}`→49 is Jinja2/Twig;
 `${7*7}`→49 is Freemarker/JSP-EL; `#{7*7}` is Ruby/Thymeleaf; `<%= 7*7 %>` is

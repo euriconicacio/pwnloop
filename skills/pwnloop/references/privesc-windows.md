@@ -54,7 +54,14 @@ Less-common but plantable privileges worth knowing:
 - **SeManageVolume** → open a handle to the volume, gain write into
   `C:\Windows`, drop a DLL a SYSTEM service loads (e.g. a phantom DLL) → SYSTEM.
 - **SeBackup/SeRestore** → `reg save HKLM\SAM/SYSTEM/SECURITY`, or read any file
-  (copy `NTDS.dit` on a DC) and dump offline.
+  (copy `NTDS.dit` on a DC) and dump offline. **On a DC the SAM hive is a dead
+  end** — its RID-500 is the local/DSRM admin, which does not authenticate to the
+  domain, and the backup right still can't open ACL-protected files with a plain
+  read. The payoff is `NTDS.dit`: make a VSS shadow with `diskshadow` (script
+  files must be **CRLF** or it silently eats the last char of each line), then
+  `robocopy /b` the file out of the snapshot (backup semantics bypass the ACL);
+  `secretsdump -ntds -system` offline → every domain hash → PtH. This is exactly
+  the Backup Operators → Domain Admin path, so audit that group on DCs.
 - **SeDebug** → dump lsass (`rundll32 comsvcs.dll MiniDump`) or inject.
 
 ## Service misconfigurations
@@ -67,7 +74,11 @@ accesschk.exe -uwcqv "Authenticated Users" *
 sc qc <service>; sc config <service> binPath= "C:\temp\rev.exe"; sc stop <service>; sc start <service>
 ```
 Also check for writable directories in a service binary's path, and writable
-DLLs it loads (DLL hijack).
+DLLs it loads (DLL hijack). **For a .NET service you can add files next to (but
+not overwrite) its `.exe`**, drop an app-local `hostfxr.dll`: the apphost prefers
+a co-located `hostfxr.dll` over the shared runtime, so your `DllMain` runs as that
+exe's account when the service starts. Works whenever you have write into the
+apphost's directory; self-delete the DLL after firing.
 
 ## Credentials on disk
 

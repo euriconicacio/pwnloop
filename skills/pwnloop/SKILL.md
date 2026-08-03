@@ -294,6 +294,21 @@ skipping the CVE/PoC hunt cost the entire run: the path was CVE-2026-4480 (Samba
 `%J` print-command injection) and the delivery detail (sink = SPOOLSS
 `document_name`, not the smbclient filename) came straight from the PoC.
 
+**This applies to privesc CVEs too, not just the foothold, and doubly before you
+write a memory-corruption exploit from scratch.** For the pinned version,
+enumerate *all* the CVEs — a daemon commonly has several at once — then reason
+about the set rather than tunnelling on one: rank by cost/reliability (an auth
+bypass or argument injection beats a memory-corruption bug on a hardened target),
+consider chaining, and **exhaust public exploits before hand-rolling**.
+`searchsploit` and web/sploitus hits often return only a *detection/leak* PoC
+while a working weaponized exploit lives in a GitHub repo they don't index — run
+`gh search repos "CVE-XXXX-YYYY"` / `gh search code "CVE-XXXX-YYYY"` and follow
+the advisory's "references" links. For a memory bug, reverse the actual primitive
+(arbitrary vs linear write, mitigations, whether a public exploit even exists)
+before committing hours — on this loop's ORION box that discipline was violated:
+deep exploit-dev went into the hard memory-corruption CVE while a cheaper
+logic-bug CVE in the *same* binary was the intended door.
+
 ### 3. Foothold
 Exploit the most promising lead. Catch shells with a listener you started
 beforehand; upgrade to a PTY the moment you land. Log the exact reproduction
@@ -375,7 +390,16 @@ make the changes rather than describing them:
 - **A tool you had to install mid-run** → add it to
   `docker/packages.local.txt`, for the same reason.
 - **A technique that worked and is not documented** → add it to the relevant
-  `references/` file.
+  `references/` file. This is a *required* half of the write-back, not optional:
+  the `local.md` one-liner is your private memory, but the tracked `references/`
+  are the shared skill that must keep growing — do both. **Write it as method,
+  never as a box's answer.** A reference entry teaches how to *reason* — pin the
+  version, enumerate the CVEs, choose/chain, find the sink — with the specific
+  CVE/version/payload as at most a compact *example* of the class. Never leave an
+  entry that reads "product X vN → CVE-Y → run this payload": that bakes one
+  box's solution into the methodology and turns the next run into recall instead
+  of discovery. Keep box-specific CVE recipes in `local.md`; keep the transferable
+  technique/class in `references/`.
 - **A mistake you made that a rule would have prevented** → add the rule.
 
 Nothing to add is a legitimate outcome; say so rather than inventing an entry.

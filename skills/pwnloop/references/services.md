@@ -25,6 +25,17 @@ pwnloop x "nxc smb $T -u guest -p '' --rid-brute 4000"
 pwnloop x "enum4linux-ng -A $T"
 ```
 
+**Pin the exact Samba version, then run it through *Version → CVEs* below** —
+`smbclient`/`rpcclient` banners and `nxc` give `4.x.y`; "Samba 4" is not a
+version. Recurring Samba exploit classes to check the version against: an
+**untrusted config value reaching a shelled-out command** — the printing path is
+the classic one, where a `print command`/`printcmd` template runs with
+attacker-influenced fields (the SPOOLSS `document_name` is a real sink, not just
+the client-side filename), so a spoolss job becomes command injection; symlink /
+`wide links` + `force user` for cross-user read/write; and stale RCEs on old
+`smbd`. Read the mechanism from the advisory/PoC and confirm the actual sink
+before assuming which field is injectable.
+
 ## FTP (21)
 
 ```bash
@@ -41,6 +52,41 @@ password from elsewhere, spray it. Private keys found on disk go in `loot/`,
 ```bash
 pwnloop x "ssh2john id_rsa > /engagements/$NAME/loot/key.hash && john --wordlist=/usr/share/wordlists/rockyou.txt /engagements/$NAME/loot/key.hash"
 ```
+
+## Telnet (23)
+
+Telnet is rare on modern boxes, so a telnetd — **especially a custom build, or
+one bound to `127.0.0.1` behind inetd/xinetd and running as root** — is almost
+always deliberate. `dpkg -S` finding no owning package + a binary under
+`/usr/libexec` or `/usr/local/sbin` means it was planted at a chosen version.
+Pin that version exactly (`telnetd --version`; `strings` often leaks the build
+path/source tree) and treat it like any version-pinned service: enumerate its
+CVEs and reason about them (see *Version → CVEs* below). The general moves worth
+knowing: telnetd hands the session to `login`, so look at (1) how client-supplied
+data (`USER`/env via NEW_ENVIRON, term type) reaches `login`'s argv — argument
+injection there is an auth bypass — and (2) option-negotiation parsers (LINEMODE
+/ SLC), a classic memory-corruption surface. When a daemon exposes both, the
+logic/auth-bypass bug is usually the intended, reliable door; confirm the
+memory-corruption primitive by reversing before committing to exploit-dev.
+
+## Version → CVEs (do this for every pinned service)
+
+Pinning the version is step one; the reasoning is the point:
+
+- **Enumerate *all* the CVEs for that exact product+version, not the first hit.**
+  A single daemon commonly has several current CVEs at once. `searchsploit` +
+  vendor advisory + NVD + a GitHub search (`gh search repos/code "CVE-…"`).
+- **When there are several, weigh and choose.** Rank by cost and reliability, not
+  by CVSS: an auth bypass / argument injection / logic flaw beats a
+  memory-corruption bug on a hardened (PIE/ASLR/RELRO/canary) target. Read each
+  advisory's *references* for a weaponized PoC before assuming you must build one.
+- **Chain when the box wants it.** Two CVEs can be a foothold + a privesc, or a
+  leak feeding an exploit — hold the whole set in view rather than tunnelling on
+  one.
+- **Reverse before hand-rolling.** For a memory bug, check the actual primitive
+  (arbitrary vs linear write, mitigations, whether a public 64-bit exploit even
+  exists) before spending hours — the intended path is often a cheaper bug in the
+  same binary.
 
 ## DNS (53)
 
