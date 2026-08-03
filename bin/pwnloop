@@ -116,28 +116,43 @@ cmd_ship() {
   fi
 }
 
+# Every line of the banner starts with a border glyph on purpose. The art used
+# to position its top two rows with leading whitespace alone, and anything that
+# re-renders this output — an agent transcript, a chat client, a markdown
+# viewer — is free to trim leading whitespace at a block boundary, which
+# dropped the top of the "p" to column 0. A frame makes column 0 printable, so
+# there is no leading whitespace left to lose.
 cmd_banner() {
-  local A V D R
+  local A B V D R ver bar l
   # Colour only for a terminal — the agent captures this output as plain text.
   if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
-    A=$'\033[38;5;215m'; V=$'\033[38;5;203m'; D=$'\033[38;5;245m'; R=$'\033[0m'
+    A=$'\033[38;5;215m'; B=$'\033[38;5;240m'; V=$'\033[38;5;203m'
+    D=$'\033[38;5;245m'; R=$'\033[0m'
   else
-    A=''; V=''; D=''; R=''
+    A=''; B=''; V=''; D=''; R=''
   fi
+  ver=$(cat "$LAB_DIR/VERSION" 2>/dev/null || echo "dev")
+
+  # Art is 58 columns wide; the frame pads it to 62 and draws the edges.
+  bar='──────────────────────────────────────────────────────────────'
+  _banner_row() { printf '%s│  %s%-58s%s  │%s\n' "$B" "$1" "$2" "$B" "$R"; }
+
   echo
-  while IFS= read -r l; do printf '%s%s%s\n' "$A" "$l" "$R"; done <<'ART'
-                                 dP
-                                 88
-    88d888b. dP  dP  dP 88d888b. 88 .d8888b. .d8888b. 88d888b.
-    88'  `88 88  88  88 88'  `88 88 88'  `88 88'  `88 88'  `88
-    88.  .88 88.88b.88' 88    88 88 88.  .88 88.  .88 88.  .88
-    88Y888P' 8888P Y8P  dP    dP dP `88888P' `88888P' 88Y888P'
-    88                                                88
-    dP                                                dP
+  printf '%s┌%s┐%s\n' "$B" "$bar" "$R"
+  while IFS= read -r l; do _banner_row "$A" "$l"; done <<'ART'
+                             dP
+                             88
+88d888b. dP  dP  dP 88d888b. 88 .d8888b. .d8888b. 88d888b.
+88'  `88 88  88  88 88'  `88 88 88'  `88 88'  `88 88'  `88
+88.  .88 88.88b.88' 88    88 88 88.  .88 88.  .88 88.  .88
+88Y888P' 8888P Y8P  dP    dP dP `88888P' `88888P' 88Y888P'
+88                                                88
+dP                                                dP
 ART
-  local ver; ver=$(cat "$LAB_DIR/VERSION" 2>/dev/null || echo "dev")
-  printf '\n    %sv%s by Eurico Nicacio (h3llh0und)%s\n' "$V" "$ver" "$R"
-  printf '    %sautonomous lab-machine engagement loop%s\n\n' "$D" "$R"
+  _banner_row '' ''
+  _banner_row "$V" "v${ver} by Eurico Nicacio (h3llh0und)"
+  _banner_row "$D" 'autonomous lab-machine engagement loop'
+  printf '%s└%s┘%s\n\n' "$B" "$bar" "$R"
 }
 
 # Directories are named after the address, which is precise during a run and

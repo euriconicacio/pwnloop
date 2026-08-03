@@ -1,16 +1,21 @@
 ```
-                                 dP
-                                 88
-    88d888b. dP  dP  dP 88d888b. 88 .d8888b. .d8888b. 88d888b.
-    88'  `88 88  88  88 88'  `88 88 88'  `88 88'  `88 88'  `88
-    88.  .88 88.88b.88' 88    88 88 88.  .88 88.  .88 88.  .88
-    88Y888P' 8888P Y8P  dP    dP dP `88888P' `88888P' 88Y888P'
-    88                                                88
-    dP                                                dP
-
-    v1.1.0 by Eurico Nicacio (h3llh0und)
-    autonomous lab-machine engagement loop
+┌──────────────────────────────────────────────────────────────┐
+│                               dP                             │
+│                               88                             │
+│  88d888b. dP  dP  dP 88d888b. 88 .d8888b. .d8888b. 88d888b.  │
+│  88'  `88 88  88  88 88'  `88 88 88'  `88 88'  `88 88'  `88  │
+│  88.  .88 88.88b.88' 88    88 88 88.  .88 88.  .88 88.  .88  │
+│  88Y888P' 8888P Y8P  dP    dP dP `88888P' `88888P' 88Y888P'  │
+│  88                                                88        │
+│  dP                                                dP        │
+│                                                              │
+│  by Eurico Nicacio (h3llh0und)                               │
+│  autonomous lab-machine engagement loop                      │
+└──────────────────────────────────────────────────────────────┘
 ```
+
+[![release](https://img.shields.io/github/v/release/euriconicacio/pwnloop?label=version&color=e06c5a)](https://github.com/euriconicacio/pwnloop/releases)
+[![license](https://img.shields.io/github/license/euriconicacio/pwnloop?color=8a8a8a)](LICENSE)
 
 An autonomous lab-machine engagement kit for Claude Code: a disposable Kali
 container, a skill that drives it, and a slash command that turns "here is an
@@ -107,11 +112,13 @@ methodology, and the ledger records what memory short-circuited and what stayed
 slow anyway. The second half is the useful one — a phase that is still slow
 across two runs is the next thing to fix.
 
-Four machines have produced a dozen such changes — packages that were missing
+Past runs have produced changes of exactly that kind — packages that were missing
 when credential reuse, pcap analysis or PDF extraction needed them; a preset git
 identity, without which `git commit-tree` refuses and plumbing-based
 exploitation is impossible; the fact that `sed -i` cannot edit a bind-mounted
-`/etc/hosts`; and techniques promoted into references after they worked.
+`/etc/hosts`; and techniques promoted into references after they worked. What
+each one changed is in [`CHANGELOG.md`](CHANGELOG.md); the redacted narratives
+are in [`writeups/`](writeups/).
 
 The one worth singling out is a **deletion**. An earlier run left the rule "fix
 Kerberos skew with `ntpdate -u <dc>`". A later one proved that cannot work — the
@@ -359,17 +366,25 @@ on demand rather than all at once:
 | file | covers |
 |------|--------|
 | `recon.md` | layered scanning, vhost/hostname handling, port triage |
-| `web.md` | fuzzing strategy, LFI/SSTI/upload/SQLi/deserialization |
+| `web.md` | fuzzing strategy, LFI/SSTI/upload/SQLi/deserialization, prototype pollution, smuggling |
 | `api.md` | REST/GraphQL discovery, JWT attacks, IDOR, race conditions, SSRF |
+| `llm-apps.md` | flow/agent/MCP platforms: unauth flow-execution RCE, tool registries, RAG poisoning |
 | `source-review.md` | reading recovered source: secrets in history, sinks, authorization gaps |
 | `cracking.md` | hash identification, john/hashcat formats, spraying strategy |
 | `services.md` | per-port playbooks: SMB, FTP, SNMP, LDAP, NFS, SQL, Redis, WinRM |
+| `binary.md` | custom network services and SUID binaries: triage, overflow, ROP, format string |
 | `foothold.md` | reverse shells, TTY upgrade, file transfer both directions |
+| `evasion.md` | AMSI, Constrained Language Mode, AppLocker/WDAC, Defender on a lab box |
 | `artifacts.md` | mining downloaded files — pcaps, archives, git history, key material |
-| `privesc-linux.md` | sudo, SUID, capabilities, cron and timers, container escapes |
-| `privesc-windows.md` | token privileges, services, credential hunting |
-| `ad.md` | AS-REP roasting, Kerberoast, ACL abuse, DCSync, ADCS |
-| `pivoting.md` | chisel, SSH tunnels, proxychains |
+| `privesc-linux.md` | sudo, SUID, capabilities, cron and timers, PATH, polkit |
+| `privesc-windows.md` | token privileges and potato selection, services, DPAPI, LAPS/gMSA, UAC |
+| `containers.md` | container escape: `docker.sock`, privileged/caps, `release_agent`, host mounts |
+| `kubernetes.md` | service-account RBAC, kubelet exec, privileged-pod escape, secrets and etcd |
+| `cloud.md` | IMDS/SSRF credential theft, AWS IAM privesc, Azure/Entra, GCP, cloud↔on-prem |
+| `ad.md` | AS-REP roasting, Kerberoast, DACL edges, delegation, shadow credentials, DCSync |
+| `adcs.md` | AD CS ESC1–ESC16, certificate theft, golden-cert and DACL persistence |
+| `relay.md` | NTLM/Kerberos coercion (PetitPotam/PrinterBug/DFSCoerce) and the relay target matrix |
+| `pivoting.md` | chisel, ligolo-ng, SSH tunnels, proxychains |
 | `reporting.md` | chain-first, defender-facing report structure |
 | `writeup.md` | publishable write-up structure and redaction rules |
 
@@ -457,7 +472,10 @@ as secrets. They cover different halves of the problem.
 ## Versioning
 
 The version lives in [`VERSION`](VERSION), is printed by `pwnloop banner`, and
-is tagged in git. Changes are recorded in [`CHANGELOG.md`](CHANGELOG.md), which
+is tagged in git. This README deliberately carries no version number of its
+own — the badge at the top reads the latest GitHub release, so there is nothing
+here to bump and nothing here to go stale. Changes are recorded in
+[`CHANGELOG.md`](CHANGELOG.md), which
 also explains what major, minor and patch mean for a methodology rather than a
 library — briefly: major breaks a workflow, minor adds capability, patch fixes
 something upstream broke.

@@ -22,6 +22,31 @@ does not belong here — what belongs is what the run *changed*.
 
 ## [Unreleased]
 
+## [1.4.3] — 2026-08-03
+
+Cosmetic release. The banner rendered wrong in the one place it is guaranteed to
+be read — the agent transcript at the top of every engagement — and the README
+carried a version number three releases out of date.
+
+### Fixed
+- **`pwnloop banner` no longer relies on leading whitespace to place its art.**
+  The top two rows of the "p" were positioned with 33 leading spaces and nothing
+  else, so any renderer that trims leading whitespace at a block boundary — the
+  Claude Code tool-output view does — collapsed them to column 0 and broke the
+  glyph. Every line now opens with a frame character, so column 0 is printable
+  and there is no leading whitespace left to lose. The version, author and
+  tagline moved inside the frame.
+
+### Changed
+- **The README no longer hardcodes a version.** It had said `v1.1.0` since 1.1.0
+  and was wrong for every release after it. The banner in the README drops the
+  version line entirely and a `shields.io` badge reads the latest GitHub release
+  instead, so the file has nothing left to bump.
+- **README reference table completed** — it listed 14 of the 22 files in
+  `skills/pwnloop/references/`, omitting `adcs.md`, `relay.md`, `evasion.md`,
+  `binary.md`, `containers.md`, `kubernetes.md`, `cloud.md` and `llm-apps.md`,
+  all of which shipped in 1.2.0–1.4.0.
+
 ## [1.4.2] — 2026-08-03
 
 Publication catch-up. The last two engagements had complete local write-ups that
@@ -343,7 +368,8 @@ machines, both Linux (one easy, one medium).
 - Small sample, and no machine has defeated the loop yet — so its failure mode
   is still unobserved.
 
-[Unreleased]: https://github.com/euriconicacio/pwnloop/compare/v1.4.2...HEAD
+[Unreleased]: https://github.com/euriconicacio/pwnloop/compare/v1.4.3...HEAD
+[1.4.3]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.4.3
 [1.4.2]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.4.2
 [1.4.1]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.4.1
 [1.4.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.4.0
