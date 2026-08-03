@@ -1,4 +1,4 @@
-# Bruno — Hack The Box, Windows / AD
+# Bruno — Hack The Box, Medium, Windows / AD
 
 A Windows domain controller that runs a small "sample scanner" web app and an
 enterprise CA. The intended chain turns a read-only anonymous FTP share into

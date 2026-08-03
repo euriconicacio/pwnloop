@@ -1,4 +1,4 @@
-# Soulmate — Hack The Box, Linux
+# Soulmate — Hack The Box, Easy, Linux
 
 **TL;DR:** A `ftp.` vhost runs CrushFTP 11.x, vulnerable to CVE-2025-31161 — an
 S3-`Authorization`-header auth bypass that yields WebInterface admin with no

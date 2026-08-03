@@ -1,4 +1,4 @@
-# Baby — Hack The Box, Windows / Active Directory
+# Baby — Hack The Box, Easy, Windows / Active Directory
 
 **TL;DR:** An anonymous LDAP bind on the domain controller leaks an initial
 password sitting in a user's `description` field — but that password is wrong for

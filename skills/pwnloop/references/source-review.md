@@ -4,6 +4,18 @@ When a machine hands you source — an exposed `.git`, a backup archive, a
 readable web root, a decompiled binary — stop fuzzing and read. Source turns
 guessing into a targeted request, and it is usually placed deliberately.
 
+**A read primitive is a source-disclosure primitive — exhaust reading before you
+build any write.** An LFI, an `ap_expr`/`.htaccess` `file:` read, an SSRF-to-file,
+a path-traversal download: the highest-value use of every one is to read the
+*deployed* app source and its configs (`stats.php`, `config.php`, `db.php`,
+`.env`, `settings.py`, `sshd_config`, service scripts), not to pivot straight to
+a clever write or injection. The intended door is almost always a credential or a
+logic detail sitting in a file you can already read; a stateful write/injection
+primitive is the fallback, not the opener. Deliberate misdirection around a read
+primitive — an account factory, a login jail, a blocked symlink — is itself the
+tell that the real path is a boring file read. Read the side you already own to
+its end first.
+
 ## Getting it
 
 ```bash

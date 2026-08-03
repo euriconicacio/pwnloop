@@ -1,4 +1,4 @@
-# FireFlow — Hack The Box, Linux
+# FireFlow — Hack The Box, Medium, Linux
 
 A modern chain: LLM-workflow platform → password reuse → a bespoke MCP tool
 registry with a JWT flaw → Kubernetes kubelet abuse → node root.

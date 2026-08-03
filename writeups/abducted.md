@@ -1,4 +1,4 @@
-# Abducted — Hack The Box, Linux
+# Abducted — Hack The Box, Medium, Linux
 
 **TL;DR:** A guest-writable Samba printer share is vulnerable to CVE-2026-4480 —
 the client-supplied print job document name (`%J`) is passed through a shell

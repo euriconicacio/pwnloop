@@ -1,4 +1,4 @@
-# Nexus — Hack The Box, Linux
+# Nexus — Hack The Box, Easy, Linux
 
 **TL;DR:** A hidden Gitea vhost serves a repo whose git *history* still holds a
 database password. That password is reused as a CRM admin login, the CRM has an

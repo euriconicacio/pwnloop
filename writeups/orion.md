@@ -1,4 +1,4 @@
-# Orion — Hack The Box, Linux
+# Orion — Hack The Box, Easy, Linux
 
 **TL;DR:** Two ports and a static-looking site, but the 404 page leaks
 `X-Powered-By: Craft CMS` and the control panel answers unauthenticated. Craft is

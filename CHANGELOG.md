@@ -22,6 +22,46 @@ does not belong here — what belongs is what the run *changed*.
 
 ## [Unreleased]
 
+## [1.5.1] — 2026-08-03
+
+One engagement (Zero) produced a new web read-primitive and a new root
+command-injection class, plus a published write-up and a correctness pass over
+the write-up metadata.
+
+### Added
+- **Reference: an attacker-controlled `.htaccess` is a file-read/RCE primitive**
+  (`references/web.md`). Where a served directory is writable (an upload sink, a
+  `mod_userdir` hoster), `.htaccess` itself is the payload and `AllowOverride`
+  decides the grant. With FileInfo but no mod_php you still get arbitrary read as
+  the web user via `ap_expr`: `ErrorDocument 404 "%{file:/path}"` (no size limit)
+  or `Header set X-L "expr=%{base64:%{file:/path}}"`. Written as a class, with the
+  probe to fingerprint the exact override and a pointer to CVE-2025-66200.
+- **Reference: a root job that rebuilds a command from a process's command line**
+  (`references/privesc-linux.md`). A supervisor/health-check (commonly `monit`
+  `check program`) that runs `${proc_cmdline/…} ; $cmd` unquoted as root is a local
+  root command-injection: craft a decoy process's `/proc/cmdline` with `exec -a`.
+  Includes the `httpd -t` + `LoadModule` trick — a config *test* still `dlopen`s a
+  module, so a `.so` constructor runs as root.
+- **Reference: a read primitive is a source-disclosure primitive — read before
+  you build a write** (`references/source-review.md`). The highest-value use of any
+  LFI/`file:`/traversal is to read the deployed app source and configs for a
+  credential or logic detail, not to pivot to a clever write; misdirection around a
+  read primitive is itself the tell that the door is a plain file read.
+
+### Changed
+- **Write-up metadata corrected.** Added the confirmed HTB difficulty to every
+  write-up title that omitted it and to the `writeups/README.md` table (now a
+  dedicated column); difficulty is platform metadata to confirm, never to infer.
+- **Troubleshooting: Opus API safeguard errors** (`README.md`). Documented the
+  transient content-classifier errors that can interrupt a long autonomous run and
+  how to recover.
+
+### Added — write-ups
+- **Zero** (`writeups/zero.md`) — Insane, Linux. Unauth SFTP-account factory →
+  writable `mod_userdir` `.htaccess` → `ap_expr` arbitrary read → reused DB
+  password in `stats.php` → SSH → `monit` config-check root command-injection via
+  a crafted process command line and `httpd -t` module load.
+
 ## [1.5.0] — 2026-08-03
 
 Two engagements (Support, Snapped) produced new privilege-escalation methodology
@@ -416,7 +456,8 @@ machines, both Linux (one easy, one medium).
 - Small sample, and no machine has defeated the loop yet — so its failure mode
   is still unobserved.
 
-[Unreleased]: https://github.com/euriconicacio/pwnloop/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/euriconicacio/pwnloop/compare/v1.5.1...HEAD
+[1.5.1]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.5.1
 [1.5.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.5.0
 [1.4.3]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.4.3
 [1.4.2]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.4.2
