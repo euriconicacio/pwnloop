@@ -22,6 +22,76 @@ does not belong here — what belongs is what the run *changed*.
 
 ## [Unreleased]
 
+## [1.4.2] — 2026-08-03
+
+Publication catch-up. The last two engagements had complete local write-ups that
+had never been through the redaction step, and a review of the published set
+turned up a wrong platform label and two IPs that the redaction pass had missed.
+No methodology change — the technique those two runs produced already landed in
+`references/` in 1.4.1.
+
+### Added
+- **Published write-ups: Baby, Orion** (`writeups/`) — redacted narratives for
+  two more retired machines. *Baby* (Windows/AD): anonymous LDAP bind → a
+  password planted in a `description` field → the accounts that matter found via
+  group `member` attributes rather than user-object enumeration →
+  `PASSWORD_MUST_CHANGE` reset over SAMR → WinRM → Backup Operators on the DC →
+  `NTDS.dit` via `diskshadow` + `robocopy /b` → pass-the-hash. *Orion* (Linux):
+  Craft CMS CVE-2025-32432 (Yii `PhpManager` gadget → blind `require`) → PHP
+  session poisoning with a literal tag over a raw socket → `www-data` → Craft
+  `.env` and a cracked bcrypt reused on SSH → inetutils telnetd 2.7 running as
+  root on localhost, CVE-2026-24061 argument injection → `login -f root`.
+  Orion's write-up also documents *why* the SLC-overflow CVE in the same binary
+  (CVE-2026-32746) is not the path: the primitive is a linear-forward write, not
+  an arbitrary one.
+
+### Fixed
+- **Platform labels** — `Bruno` was published as a Vulnlab machine in both
+  `writeups/README.md` and `writeups/bruno.md`; every machine in the published
+  set is Hack The Box. Corrected there and in the 1.4.0 changelog entry.
+- **Redaction misses** — two machine IPs survived the publication pass in
+  `writeups/bruno.md` (`-dc-ip`) and `writeups/fireflow.md` (an MCP registry
+  URL), against the `10.129.x.x` convention the write-up index states. Both
+  generalised.
+- **Changelog release links** — the comparison/tag link block at the bottom of
+  this file had gone stale at 1.1.0.
+
+## [1.4.1] — 2026-08-02
+
+*(Backfilled — 1.4.1 was tagged and released without a changelog entry.)*
+
+Two engagements exposed the same failure mode: pinning a version, finding *a*
+CVE, and tunnelling on it instead of reasoning about the set. This release turns
+that into method, and backfills the reference coverage the runs produced.
+
+### Changed
+- **`SKILL.md` step 2** — for a pinned version, enumerate *all* of its CVEs and
+  reason about the set: rank by cost and reliability (an auth bypass or argument
+  injection beats a memory-corruption bug on a hardened target), consider
+  chaining, and **exhaust public exploits before hand-rolling one** —
+  `searchsploit` and web search often surface only a detection/leak PoC while a
+  weaponised exploit lives in a GitHub repo they do not index, so
+  `gh search repos/code "CVE-…"` and the advisory's reference links are part of
+  the hunt. Applies to privesc CVEs, not just the foothold.
+- **`SKILL.md` step 8** — writing to `references/` is a *required* half of the
+  write-back, and it must be method, never a box's answer. Box-specific recipes
+  stay in `memory/local.md`; the transferable class goes to `references/`.
+
+### Added
+- **`references/services.md`** — Telnet playbook and a reusable
+  "version → CVEs" checklist; the Samba print-command / spoolss injection class.
+- **`references/web.md`** — CMS RCE reframed as the general
+  "framework object-injection → include/require RCE" class: blind-include
+  side-effect oracles, session-file poisoning, raw-socket tag injection
+  (Craft/Yii as the worked example).
+- **`references/privesc-windows.md`** — Backup Operators on a DC → `NTDS.dit`
+  via `diskshadow` + `robocopy /b` (the SAM hive is a DSRM dead end); .NET
+  app-local `hostfxr.dll` sideload.
+
+### Fixed
+- **`references/ad.md`** — leaked box literals in the kerbrute examples
+  generalised to the `machine.htb` placeholder convention.
+
 ## [1.4.0] — 2026-08-02
 
 A large methodology-coverage expansion: six new reference files and substantial
@@ -56,7 +126,7 @@ box-specific content entered the shared methodology.
   defenses: recognizing AMSI vs Constrained Language Mode vs AppLocker/WDAC vs
   on-access Defender from the symptom, and the smallest move past each.
 - **Published write-ups: Bruno, FireFlow, Abducted** (`writeups/`) — redacted
-  narratives for three retired machines (Vulnlab AD Certifried; HTB Langflow→k8s;
+  narratives for three retired machines (HTB AD Certifried; HTB Langflow→k8s;
   HTB Samba CVE-2026-4480 print-command injection).
 
 ### Changed
@@ -273,6 +343,11 @@ machines, both Linux (one easy, one medium).
 - Small sample, and no machine has defeated the loop yet — so its failure mode
   is still unobserved.
 
-[Unreleased]: https://github.com/euriconicacio/pwnloop/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/euriconicacio/pwnloop/compare/v1.4.2...HEAD
+[1.4.2]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.4.2
+[1.4.1]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.4.1
+[1.4.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.4.0
+[1.3.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.3.0
+[1.2.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.2.0
 [1.1.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.1.0
 [1.0.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.0.0

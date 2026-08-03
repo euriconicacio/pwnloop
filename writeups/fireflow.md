@@ -64,7 +64,7 @@ No sudo rights. Stock SUID/caps. But localhost is a **k3s** node (6443, 10250,
 10259, …) and `~/.mcp/config.json` holds:
 
 ```json
-{"server":"http://10.129.52.1:30080","user":"langflow-bot","password":"<mcp-password>"}
+{"server":"http://10.129.x.x:30080","user":"langflow-bot","password":"<mcp-password>"}
 ```
 
 `:30080` is a k3s NodePort (localhost-only) serving a custom **"MCP AI Tool

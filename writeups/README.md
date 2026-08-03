@@ -10,10 +10,12 @@ through the redaction step described in
 | [Nexus](nexus.md) | Hack The Box (retired) | Linux | vhost fuzzing → secret in git history → credential reuse → CVE-2026-38526 upload RCE → production `.env` → path traversal in a root-run sync job |
 | [Forest](forest.md) | Hack The Box (retired) | Windows / AD | anonymous user enum → AS-REP roast → crack → WinRM → Account Operators → Exchange `WriteDacl` on domain → DCSync → pass-the-hash |
 | [Escape](escape.md) | Hack The Box (retired) | Windows / AD | anonymous SMB share → credential in an onboarding PDF → `xp_dirtree` UNC coercion → NetNTLMv2 crack → WinRM → password in a backup SQL error log → AD CS ESC1 → pass-the-hash |
-| [Bruno](bruno.md) | Vulnlab (retired) | Windows / AD | service-account password → Kerberoast reuse → `MachineAccountQuota` + Certifried (CVE-2022-26923) → certificate → pass-the-hash |
+| [Bruno](bruno.md) | Hack The Box (retired) | Windows / AD | service-account password → Kerberoast reuse → `MachineAccountQuota` + Certifried (CVE-2022-26923) → certificate → pass-the-hash |
 | [Fireflow](fireflow.md) | Hack The Box (retired) | Linux / k8s | unauth Langflow public-flow RCE (CVE-2026-38526) → env password → SSH (user) → MCP/registry credential leak → Kubernetes `get nodes/proxy` kubelet exec → privileged pod → node root |
 | [Abducted](abducted.md) | Hack The Box (retired) | Linux | CVE-2026-4480 Samba `%J` print-command injection → world-readable rclone credential (reversible) → password reuse → SMB wide-links/force-user lateral → operators-writable systemd drop-in → root |
 | [Soulmate](soulmate.md) | Hack The Box (retired) | Linux | CrushFTP CVE-2025-31161 auth bypass → admin VFS `file:///` mount (root-in-container) → `PUT` webshell into bind-mounted webroot → `www-data` → root-owned Erlang/OTP SSH CVE-2025-32433 pre-auth RCE → SUID bash |
+| [Baby](baby.md) | Hack The Box (retired) | Windows / AD | anonymous LDAP bind → password in a `description` field → hidden accounts via group `member` attrs → `PASSWORD_MUST_CHANGE` reset over SAMR → WinRM → Backup Operators on the DC → `diskshadow` + `robocopy /b` NTDS.dit → pass-the-hash |
+| [Orion](orion.md) | Hack The Box (retired) | Linux | Craft CMS CVE-2025-32432 (Yii `PhpManager` gadget → blind `require`) → PHP session poisoning over a raw socket → `www-data` → Craft `.env` + cracked bcrypt → SSH password reuse → root-run inetutils telnetd CVE-2026-24061 `USER` argument injection → `login -f root` |
 
 ## What is redacted, and what is not
 
