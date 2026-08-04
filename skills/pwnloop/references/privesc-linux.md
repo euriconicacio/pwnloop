@@ -84,6 +84,25 @@ Quick classes the sweep already surfaced:
 ## SUID / capabilities
 
 Compare the SUID list against a stock system — anything unusual is the path.
+
+**Pin the version of an unusual SUID binary before deciding it is uninteresting.**
+GTFOBins entries are frequently *version-conditional*: a tool acquires a scripting
+or interactive mode, it gets abused, and upstream removes it in a later release.
+So the binary on a modern box is inert while the identically-named one on an old
+box is a one-command root. `ls -la` it for the mode, then run its `--version`.
+Look for any subcommand that hands a string to `system()`: an interactive prompt
+with a `!`/`shell` escape, an embedded scripting engine, a `--exec`/`-o` hook, a
+config file that names a program to run. Most such modes read stdin, so they
+weaponise non-interactively with `echo "<escape> <cmd>" | binary <mode>` — which
+matters when your foothold is a synchronous exec primitive with no TTY.
+
+Confirm you actually crossed the boundary before celebrating: `uid` non-zero with
+`euid=0` is the signature of a setuid binary rather than a login, and some
+payloads need `bash -p` to keep the euid.
+*(lame: `/usr/bin/nmap` 4.53 mode 4755 — `--interactive` plus its `!` escape,
+removed upstream in 5.20; two `echo | nmap --interactive` lines made a setuid
+shell)*
+
 GTFOBins again for the standard binaries. `cap_setuid+ep` on python/perl:
 ```bash
 ./python -c 'import os;os.setuid(0);os.system("/bin/bash")'

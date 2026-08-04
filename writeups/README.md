@@ -19,6 +19,7 @@ through the redaction step described in
 | [Support](support.md) | Hack The Box (retired) | Easy | Windows / AD | `guest` SMB share → XOR-obfuscated LDAP password in a custom .NET tool → cleartext password in a user's `info` attribute → WinRM → `Shared Support Accounts` `GenericAll` on `DC$` + `MachineAccountQuota` → RBCD → S4U2Proxy → DCSync |
 | [Snapped](snapped.md) | Hack The Box (retired) | Hard | Linux | unauth Nginx UI `GET /api/backup` returning its own AES key in a header → node secret = API-auth bypass + bcrypt hashes → password reuse on SSH → PackageKit CVE-2026-41651 (Pack2TheRoot) `InstallFiles` TOCTOU → SUID root |
 | [Zero](zero.md) | Hack The Box (retired) | Insane | Linux | unauth SFTP-account factory → writable `mod_userdir` `.htaccess` (`AllowOverride FileInfo`) → arbitrary www-data read via `ap_expr` `%{file:}` → reused DB password in `stats.php` → SSH → root `monit` config-check runs a command rebuilt from a process's own command line → `httpd -t` `LoadModule`s a malicious `.so` → root |
+| [Lame](lame.md) | Hack The Box (retired) | Easy | Linux | full-range sweep finds `distccd` outside the top 1000 → CVE-2004-2687 unauth exec as `daemon` → world-readable `user.txt` → setuid-root `nmap` 4.53 `--interactive` `!` shell escape → root; separately, Samba 3.0.20 CVE-2007-2447 `username map script` delivered by a hand-built non-extended SMB1 `SESSION_SETUP_ANDX` → unauth RCE **as root** |
 
 ## What is redacted, and what is not
 

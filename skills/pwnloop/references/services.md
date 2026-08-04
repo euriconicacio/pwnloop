@@ -36,6 +36,41 @@ the client-side filename), so a spoolss job becomes command injection; symlink /
 `smbd`. Read the mechanism from the advisory/PoC and confirm the actual sink
 before assuming which field is injectable.
 
+**A bug in the *authentication* path may be unreachable with a modern client —
+that is a delivery problem, not a patched target.** Whenever the injectable
+field is one the client negotiates *around* (a username, a domain, a workstation
+name), stock `smbclient` and impacket will pack it into an NTLMSSP/SPNEGO blob,
+where metacharacters sit inside a structured field and never reach a shell. The
+symptom is indistinguishable from "not vulnerable": a clean `NT_STATUS_LOGON_FAILURE`
+and no side effect. Do not park the lead on that evidence alone.
+
+Diagnose it in this order:
+1. **Confirm the precondition on the target**, not from the version. If you have
+   any other exec primitive, read the config and look for the directive that
+   makes the sink reachable at all (for the username-map class, a
+   `username map script` line in `smb.conf`). Precondition present + version in
+   range = the vuln is live and you have a delivery bug.
+2. **Do not bother with the legacy client knobs.** `client use spnego = no`,
+   `client ntlmv2 auth = no`, `client lanman auth = yes` are *accepted and
+   ignored* by current Samba — it prints a deprecation warning and negotiates
+   modern auth anyway. Reading those warnings as cosmetic costs real time.
+3. **Emit the raw exchange yourself.** For SMB1 this is ~60 lines of socket
+   code: NEGOTIATE offering only `NT LM 0.12`, then a **non-extended
+   `SESSION_SETUP_ANDX` (`WordCount 13`)** with the `EXTENDED_SECURITY` bit
+   (`0x0800`) clear in `flags2` and `AccountName` as a plain null-terminated
+   string. That is the only shape in which the field reaches the server's
+   `smbrun()`-equivalent verbatim.
+4. **Confirm with a side-effect oracle, never the response.** These bugs run the
+   command and *then* reject the login, and there is no output channel — so a
+   failure status is the success case. Have the payload write a file, sleep a
+   measurable interval, or call back, and check that instead.
+
+The generalisation beyond SMB: the older the auth-path bug, the more likely your
+client has evolved past being able to express it. When a well-evidenced legacy
+exploit "fails", suspect your client before you conclude the target is patched.
+*(lame: Samba 3.0.20 CVE-2007-2447, dead via smbclient and impacket, delivered
+in one exchange by hand-built SMB1)*
+
 ## FTP (21)
 
 ```bash

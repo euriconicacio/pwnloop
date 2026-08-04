@@ -22,6 +22,47 @@ does not belong here — what belongs is what the run *changed*.
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-08-04
+
+One engagement (Lame) against a deliberately antique host. The box itself was
+easy; what it exposed was a blind spot in the methodology — a correct,
+well-evidenced lead that **stock tooling can no longer deliver**, and which the
+loop had no guidance for and very nearly recorded as a dead end.
+
+### Added
+- **Reference: a bug in the *authentication* path may be unreachable with a
+  modern client — that is a delivery problem, not a patched target**
+  (`references/services.md`). When the injectable field is one the client
+  negotiates *around* (a username, a domain, a workstation name), `smbclient` and
+  impacket pack it into an NTLMSSP/SPNEGO blob where metacharacters sit inside a
+  structured field and never reach a shell. The symptom is indistinguishable from
+  "not vulnerable": a clean `NT_STATUS_LOGON_FAILURE` and no side effect. The
+  entry gives the diagnosis order — confirm the precondition on the target rather
+  than arguing with the version; know that the legacy client knobs
+  (`client use spnego = no`, `client ntlmv2 auth = no`) are *accepted and
+  ignored*; emit the raw exchange yourself (NEGOTIATE offering only `NT LM 0.12`,
+  then a non-extended `SESSION_SETUP_ANDX` with `WordCount 13` and the
+  `EXTENDED_SECURITY` bit clear); and confirm with a side-effect oracle, since
+  these bugs run the command and *then* reject the login, so a failure status is
+  the success case.
+- **Reference: pin the version of an unusual setuid binary before deciding it is
+  uninteresting** (`references/privesc-linux.md`). GTFOBins entries are
+  frequently version-conditional — a tool acquires a scripting or interactive
+  mode, it gets abused, upstream removes it — so an identically-named binary is
+  inert on a modern box and a one-command root on an old one. Includes what to
+  look for (any subcommand that hands a string to `system()`: an interactive `!`
+  escape, an embedded scripting engine, an `--exec` hook) and how to drive those
+  modes non-interactively when the foothold has no TTY.
+
+### Added — write-ups
+- **Lame** (`writeups/lame.md`) — Easy, Linux. Full-range sweep finds `distccd`
+  outside the top 1000 → CVE-2004-2687 unauthenticated exec as `daemon` →
+  world-readable `user.txt` → setuid-root `nmap` 4.53 `--interactive` `!` shell
+  escape → root. Separately: Samba 3.0.20 CVE-2007-2447 delivered by a
+  hand-built non-extended SMB1 session setup — unauthenticated RCE **as root** in
+  a single packet exchange, after the same vulnerability had failed through every
+  stock client.
+
 ## [1.5.1] — 2026-08-03
 
 One engagement (Zero) produced a new web read-primitive and a new root
@@ -456,7 +497,8 @@ machines, both Linux (one easy, one medium).
 - Small sample, and no machine has defeated the loop yet — so its failure mode
   is still unobserved.
 
-[Unreleased]: https://github.com/euriconicacio/pwnloop/compare/v1.5.1...HEAD
+[Unreleased]: https://github.com/euriconicacio/pwnloop/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.6.0
 [1.5.1]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.5.1
 [1.5.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.5.0
 [1.4.3]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.4.3
