@@ -14,6 +14,15 @@
 #   pwnloop engagements        list past engagements and what each one was
 #   pwnloop banner             print the startup banner
 #   pwnloop ship [msg]         commit and push your learnings to your own remote
+#
+# Multi-host campaigns (Pro Labs) — state store, see bin/lib/campaign.sh:
+#   pwnloop campaign <new|use|list|status|resume|sync|dir>
+#   pwnloop host <add|set|list|show>
+#   pwnloop cred <add|list>
+#   pwnloop try <cred> <host> <service> <ok|fail|locked|error> | try next [n]
+#   pwnloop route <add|del|list|check>
+#   pwnloop flag <host> <name> <value>
+#   pwnloop lead <add|list|done|dead>
 set -euo pipefail
 
 LAB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -34,14 +43,22 @@ cmd_build() {
 cmd_up() {
   if exists; then
     running || docker start "$NAME" >/dev/null
+    # A container created before campaign mode has no /campaigns mount, and a
+    # bind mount cannot be added to a live container.
+    docker container inspect -f '{{range .Mounts}}{{.Destination}} {{end}}' "$NAME" \
+      | grep -q /campaigns || {
+      echo "note: this container predates campaign mode and has no /campaigns mount." >&2
+      echo "      run 'pwnloop down && pwnloop up' before starting a campaign." >&2
+    }
   else
-    mkdir -p "$LAB_DIR/engagements" "$LAB_DIR/vpn"
+    mkdir -p "$LAB_DIR/engagements" "$LAB_DIR/campaigns" "$LAB_DIR/vpn"
     docker run -d --name "$NAME" \
       --platform linux/arm64 \
       --cap-add=NET_ADMIN \
       --device /dev/net/tun \
       --dns 1.1.1.1 \
       -v "$LAB_DIR/engagements:/engagements" \
+      -v "$LAB_DIR/campaigns:/campaigns" \
       -v "$LAB_DIR/vpn:/vpn:ro" \
       "$IMAGE" >/dev/null
   fi
@@ -99,7 +116,7 @@ cmd_ship() {
   echo "$staged" | sed 's/^/  /'
 
   # Refuse engagement data outright, whatever the hook is doing.
-  if echo "$staged" | grep -qE '^engagements/|^vpn/|flags\.local\.md|\.ovpn$'; then
+  if echo "$staged" | grep -qE '^engagements/|^campaigns/|^vpn/|flags\.local\.md|\.ovpn$'; then
     echo >&2; echo "refusing: engagement data is staged. Unstage it and check .gitignore." >&2
     git reset -q; exit 1
   fi
@@ -177,6 +194,11 @@ cmd_flags() {
   else echo "no flags captured yet ($LAB_DIR/flags.local.md)"; fi
 }
 
+# Campaign state lives in its own file: it is a third of this script's size and
+# only a multi-host engagement ever touches it.
+# shellcheck source=lib/campaign.sh
+. "$LAB_DIR/bin/lib/campaign.sh"
+
 case "${1:-}" in
   build) shift; cmd_build "$@" ;;
   up) shift; cmd_up "$@" ;;
@@ -191,5 +213,12 @@ case "${1:-}" in
   engagements) cmd_engagements ;;
   banner) cmd_banner ;;
   ship) shift; cmd_ship "$@" ;;
+  campaign) shift; cmd_campaign "$@" ;;
+  host) shift; cmd_host "$@" ;;
+  cred) shift; cmd_cred "$@" ;;
+  try) shift; cmd_try "$@" ;;
+  route) shift; cmd_route "$@" ;;
+  flag) shift; flag_add "$@" ;;
+  lead) shift; cmd_lead "$@" ;;
   *) usage ;;
 esac

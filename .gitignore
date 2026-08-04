@@ -1,5 +1,6 @@
 # Engagement data, flags and VPN credentials never belong in the repository.
 engagements/
+campaigns/
 flags.local.md
 vpn/
 

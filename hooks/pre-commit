@@ -18,7 +18,7 @@ staged=$(git diff --cached --name-only --diff-filter=ACM)
 # 1. Paths that must never be tracked, even if .gitignore is edited.
 while IFS= read -r f; do
   case "$f" in
-    engagements/*|vpn/*|flags.local.md|*.ovpn)
+    engagements/*|campaigns/*|vpn/*|flags.local.md|*.ovpn)
       note "refusing to commit engagement data: $f" ;;
   esac
 done <<< "$staged"

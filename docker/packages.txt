@@ -43,6 +43,11 @@ socat
 proxychains4
 whois
 
+# pivoting / multi-host
+sshuttle
+mitm6
+iptables
+
 # web
 ffuf
 gobuster

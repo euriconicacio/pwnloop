@@ -53,6 +53,7 @@ you can watch happen.
 - [VPN](#vpn)
 - [Running an engagement](#running-an-engagement)
 - [What you get](#what-you-get)
+- [Campaign mode — multi-host labs](#campaign-mode--multi-host-labs)
 - [Command reference](#command-reference)
 - [Cleanup policy](#cleanup-policy)
 - [What is in the container](#what-is-in-the-container)
@@ -310,6 +311,60 @@ dead ends and why. Merging them serves neither audience.
 ~/pwnloop/bin/pwnloop flags     # all captured flags, newest engagement last
 ```
 
+## Campaign mode — multi-host labs
+
+> Unreleased, on the `v2-campaign` branch.
+
+A Pro Lab is not a long machine. It is a graph of hosts where most targets are
+unreachable until another one is owned, and where the work outlives a context
+window many times over. The failures that cost you a day are organisational, not
+technical: re-spraying a credential you already tried, debugging a scan through a
+tunnel that died an hour ago, losing track of which of nineteen hosts still has
+an unexplored port.
+
+So campaign mode adds a second loop above the machine loop, and a state store on
+disk that the agent writes through a CLI instead of by hand.
+
+```bash
+~/pwnloop/bin/pwnloop campaign new dante 10.10.110.0/24
+cd ~/pwnloop && claude
+> /pwnloop-lab dante 10.10.110.0/24
+```
+
+Days later, in a session that remembers nothing:
+
+```bash
+> /pwnloop-lab resume dante
+```
+
+`campaign resume` prints the network state, TCP-tests every registered tunnel
+against its canary, and names the open work. Re-establishing dead routes comes
+before anything else — after a lab reset, a stale route is indistinguishable from
+a hardened target.
+
+```
+campaigns/<lab>/
+  campaign.json   hosts, credentials, spray matrix, routes, leads, flags
+  network.md      auto-rendered dashboard — tail this one
+  CAMPAIGN.md     the narrative: decisions, in order, with evidence
+  hosts/<ip>/     one single-host engagement per host, unchanged
+```
+
+Two mechanisms carry most of the value. The **credential matrix** records every
+spray result, so `pwnloop try next` only ever suggests untried (credential, host,
+service) triples — and a `locked` result removes that credential from every
+future suggestion, because on a hardened domain lockout is the one irreversible
+mistake. The **route registry** requires a canary per tunnel, so a route's status
+is something tested rather than assumed.
+
+For long labs the campaign loop delegates per-host enumeration to subagents that
+write back through the same CLI: the campaign keeps the network model, each
+subagent keeps one box's detail, and nothing is lost when its context ends.
+
+Pro Labs never retire, so campaign mode deliberately does **not** produce a
+publishable write-up — only the defender-facing report, inside the gitignored
+campaign directory. See [Platform rules](#platform-rules).
+
 ## Command reference
 
 ```
@@ -326,6 +381,14 @@ pwnloop flags              show locally captured flags
 pwnloop engagements        list past engagements and what each one was
 pwnloop banner             print the startup banner
 pwnloop ship [msg]         commit and push your learnings to your own remote
+
+campaign new|use|list|status|resume|sync|dir
+host add|set|list|show     network inventory
+cred add|list              credential store
+try <c> <h> <svc> <result> record a spray attempt; 'try next' suggests untried ones
+route add|del|list|check   tunnel registry; 'check' tests each canary
+flag <host> <name> <val>   record and print a flag
+lead add|list|done|dead    the campaign frontier
 ```
 
 ## Cleanup policy
@@ -348,9 +411,17 @@ remove it later.
 `impacket-scripts`, `evil-winrm`, `certipy`, `bloodhound-python`, `ldap-utils`,
 `krb5-user`, `hydra`, `john`, `hashcat`, `cewl`, `responder`, `sshpass`, `swaks`,
 `searchsploit`, `git-dumper`, `ldapdomaindump`, `tshark`, `tcpdump`, `binwalk`,
-`exiftool`, `gdb`, `pwntools`, `proxychains4`, `chisel`, SecLists and an
-uncompressed rockyou, plus `linpeas` / `winPEAS` / `pspy` staged under
-`/opt/static` for delivery to targets.
+`exiftool`, `gdb`, `pwntools`, `proxychains4`, `chisel`, `ligolo-ng`, `sshuttle`,
+`mitm6`, SecLists and an uncompressed rockyou, plus `linpeas` / `winPEAS` /
+`pspy` staged under `/opt/static` for delivery to targets.
+
+For multi-host labs, `/opt/static/windows/` also stages what a Windows foothold
+needs and cannot build for itself: the ligolo-ng and chisel agents, `SharpHound`,
+`Rubeus`, `Certify`, `Seatbelt`, `SharpUp`, `mimikatz`, `RunasCs`, `GodPotato`,
+`PowerView` and `PowerUp`. These are resolved from GitHub releases at build time
+rather than pinned URLs, so the image tracks upstream instead of rotting; a
+failed download lands in `/opt/skipped-downloads.txt` and degrades the image
+rather than breaking the build.
 
 Adding tooling: edit `docker/packages.txt`, then `pwnloop build`. A package with no
 build for your architecture is logged to `/opt/skipped-packages.txt` inside the
@@ -384,9 +455,14 @@ on demand rather than all at once:
 | `ad.md` | AS-REP roasting, Kerberoast, DACL edges, delegation, shadow credentials, DCSync |
 | `adcs.md` | AD CS ESC1–ESC16, certificate theft, golden-cert and DACL persistence |
 | `relay.md` | NTLM/Kerberos coercion (PetitPotam/PrinterBug/DFSCoerce) and the relay target matrix |
-| `pivoting.md` | chisel, ligolo-ng, SSH tunnels, proxychains |
+| `pivoting.md` | mechanism choice, ligolo-ng/chisel/SSH, double pivots, tunnel recovery |
 | `reporting.md` | chain-first, defender-facing report structure |
 | `writeup.md` | publishable write-up structure and redaction rules |
+
+`skills/pwnloop-campaign/SKILL.md` is the multi-host counterpart: the frontier
+loop, the resume protocol, credential handling at lab scale, per-host delegation
+and the Pro Lab publication rule. It reuses every reference above — the technique
+library is shared; what differs is what decides the next move.
 
 The design choices that matter for autonomy: **never stop between phases**,
 **parallelize scans instead of waiting**, **time-box any lead to ~15 minutes**

@@ -22,6 +22,50 @@ does not belong here — what belongs is what the run *changed*.
 
 ## [Unreleased]
 
+### Campaign mode — multi-host labs (branch `v2-campaign`, unreleased)
+
+Everything below targets a *network* rather than a host: an HTB Pro Lab, an AD
+range, any engagement where most of the targets are unreachable until another one
+is owned and the work outlives a single context window many times over.
+
+The single-host loop is unchanged and becomes the inner loop.
+
+**Added**
+
+- `skills/pwnloop-campaign/` — the outer loop: frontier-based target selection,
+  the resume protocol, credential handling at lab scale, per-host delegation, and
+  the Pro Lab publication rule (no publishable write-up — Pro Labs never retire).
+- `commands/pwnloop-lab.md` — `/pwnloop-lab <lab> <cidr>` and
+  `/pwnloop-lab resume <lab>`.
+- `references/delegation.md` — the per-host subagent brief and the structured
+  receipt it must return, plus what is never delegated (scope calls, cleanup,
+  methodology write-back). Context, not time, is the scarce resource on a
+  twenty-host lab; free-form briefs produce summaries that cannot be merged.
+- `bin/lib/campaign.sh` — the state store. `campaign`, `host`, `cred`, `try`,
+  `route`, `flag` and `lead` subcommands write `campaigns/<lab>/campaign.json`
+  and re-render `network.md` after every mutation. The CLI is the only writer:
+  on a twenty-host lab, free-form state edits drift within hours.
+- Credential matrix — every spray result recorded, `try next` suggests only
+  untried (credential, host, service) triples, and a `locked` result removes that
+  credential from all future suggestions. Lockout is the one irreversible
+  mistake available on a hardened lab.
+- Route registry with canaries — `route check` proves a tunnel still carries
+  traffic instead of trusting the state file. A dead tunnel is indistinguishable
+  from a hardened target until you test it.
+- Container: ligolo-ng proxy and agents (linux + windows), chisel for windows,
+  static socat, SharpHound, Rubeus, Certify, Seatbelt, SharpUp, mimikatz,
+  RunasCs, GodPotato, PowerView/PowerUp, `mitm6`, `sshuttle`, `bloodhound-ce`.
+  Release assets are resolved through the GitHub API at build time
+  (`docker/fetch-release.sh`) rather than pinned URLs that rot silently.
+- `/campaigns` bind mount; `pwnloop up` warns when an older container lacks it.
+
+**Fixed**
+
+- `references/pivoting.md` documented `/opt/static/ligolo-proxy`, which the image
+  never installed. Rewritten for multi-hop labs: mechanism selection, double
+  pivots, non-interactive proxy control, agent delivery, discovery from inside a
+  host, and a tunnel-recovery order for after a lab reset.
+
 ## [1.6.0] — 2026-08-04
 
 One engagement (Lame) against a deliberately antique host. The box itself was

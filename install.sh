@@ -8,12 +8,16 @@ CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
 mkdir -p "$CLAUDE_DIR/skills" "$CLAUDE_DIR/commands"
 
-ln -sfn "$REPO/skills/pwnloop" "$CLAUDE_DIR/skills/pwnloop"
-ln -sfn "$REPO/commands/pwnloop.md"    "$CLAUDE_DIR/commands/pwnloop.md"
+ln -sfn "$REPO/skills/pwnloop"          "$CLAUDE_DIR/skills/pwnloop"
+ln -sfn "$REPO/skills/pwnloop-campaign" "$CLAUDE_DIR/skills/pwnloop-campaign"
+ln -sfn "$REPO/commands/pwnloop.md"     "$CLAUDE_DIR/commands/pwnloop.md"
+ln -sfn "$REPO/commands/pwnloop-lab.md" "$CLAUDE_DIR/commands/pwnloop-lab.md"
 echo "linked skill  -> $CLAUDE_DIR/skills/pwnloop"
+echo "linked skill  -> $CLAUDE_DIR/skills/pwnloop-campaign"
 echo "linked command-> $CLAUDE_DIR/commands/pwnloop.md"
+echo "linked command-> $CLAUDE_DIR/commands/pwnloop-lab.md"
 
-mkdir -p "$REPO/engagements" "$REPO/vpn"
+mkdir -p "$REPO/engagements" "$REPO/campaigns" "$REPO/vpn"
 
 # Your own learnings live in files upstream never touches, so `git pull` cannot
 # conflict with what your engagements have written.
