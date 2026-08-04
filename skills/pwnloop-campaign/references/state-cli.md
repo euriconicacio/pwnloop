@@ -10,13 +10,25 @@ All commands act on the *current* campaign (`campaigns/.current`, set by
 ## Campaign
 
 ```bash
-pwnloop campaign new <lab> <cidr>[,<cidr>…]   # create, set current
-pwnloop campaign use <lab>                    # switch
+pwnloop campaign new <cidr>[,<cidr>…] [name]  # create, set current
+pwnloop campaign use <dir-name>               # switch
+pwnloop campaign rename <name>                # at the end, once the name is free
 pwnloop campaign list                         # all campaigns, owned/total
 pwnloop campaign status                       # the dashboard
-pwnloop campaign resume                       # dashboard + route check + next actions
+pwnloop campaign resume                       # checkpoint + dashboard + route check + next
+pwnloop campaign checkpoint "<handoff note>"  # what you were in the middle of
 pwnloop campaign dir                          # absolute path, for scripting
 ```
+
+`checkpoint` is the last command of every session. The state file says what is
+true; the checkpoint says what you were doing, what is half-done, and what you
+would have picked up next — the part that is expensive to reconstruct and
+impossible to infer. `resume` prints it first.
+
+The name argument is optional and normally omitted — the directory is derived
+from the entry range (`10.10.110.0/24` → `campaigns/10-10-110-0-24/`) so the
+lab's name never has to be spoken before the work is done. `campaigns/.current`
+is what identifies the campaign you are on, so no command needs the name.
 
 `resume` is the first command of every new session on an existing campaign. It
 tests each route's canary and tells you what is stale before you act on it.

@@ -66,8 +66,11 @@ _services_for() {
 # ── campaign ─────────────────────────────────────────────────────────────────
 
 campaign_new() {
-  local lab="${1:?usage: pwnloop campaign new <lab> <cidr>[,<cidr>…]}"
-  local scope="${2:?usage: pwnloop campaign new <lab> <cidr>[,<cidr>…]}"
+  local scope="${1:?usage: pwnloop campaign new <cidr>[,<cidr>…] [name]}"
+  # The name is optional on purpose: a lab's name is a recall trigger, and the
+  # entry range identifies the campaign just as well until the work is done.
+  # 'campaign rename' exists for afterwards, when the handle stops being free.
+  local lab="${2:-$(printf '%s' "${scope%%,*}" | tr './' '-')}"
   local dir="$CAMPAIGNS_DIR/$lab"
   [ -e "$dir" ] && _die "campaigns/$lab already exists — 'campaign use $lab' to resume it"
 
@@ -100,6 +103,24 @@ campaign_use() {
   [ -d "$CAMPAIGNS_DIR/$lab" ] || _die "no campaign '$lab'"
   printf '%s\n' "$lab" > "$CAMPAIGNS_DIR/.current"
   echo "current campaign: $lab"
+}
+
+# Ask the operator what the lab is called only at the end, then rename — the
+# same trade the single-host loop makes: an address is precise during the run
+# and useless as an archive key six months later.
+campaign_rename() {
+  local new="${1:?usage: pwnloop campaign rename <name>}"
+  local old; old=$(_lab)
+  [ "$new" = "$old" ] && { echo "already named $new"; return 0; }
+  [ -e "$CAMPAIGNS_DIR/$new" ] && _die "campaigns/$new already exists — pick another name"
+  local f="$CAMPAIGNS_DIR/$old/campaign.json"
+  jq --arg n "$new" '.lab = $n' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  mv "$CAMPAIGNS_DIR/$old" "$CAMPAIGNS_DIR/$new"
+  printf '%s\n' "$new" > "$CAMPAIGNS_DIR/.current"
+  local led="$CAMPAIGNS_DIR/$new/CAMPAIGN.md"
+  [ -f "$led" ] && sed -i '' "1s/.*/# $new — campaign ledger/" "$led" 2>/dev/null || true
+  _sync_network_md
+  echo "campaigns/$old → campaigns/$new"
 }
 
 campaign_list() {
@@ -161,8 +182,27 @@ _sync_network_md() {
   { echo '```'; PWNLOOP_LAB="$lab" campaign_status; echo '```'; } > "$dir/network.md" 2>/dev/null || true
 }
 
+# A session is hours; a lab is longer. The state file records what is *true*,
+# which is not the same as what you were in the middle of — the half-built
+# exploit, the theory you had just formed, the reason a host was skipped. That
+# is what a checkpoint carries across the gap, and it is cheap to write and
+# expensive to reconstruct.
+campaign_checkpoint() {
+  local note="${*:?usage: pwnloop campaign checkpoint <what you were doing and what is next>}"
+  local now; now=$(_now)
+  _edit --arg n "$note" --arg t "$now" '.checkpoint = {note: $n, time: $t}'
+  printf '\n> **Checkpoint %s** — %s\n' "$now" "$note" >> "$(_cdir)/CAMPAIGN.md"
+  echo "checkpoint saved — 'pwnloop campaign resume' will show it first"
+}
+
 # Everything the next session needs to pick the campaign back up.
 campaign_resume() {
+  local f; f=$(_cjson)
+  if jq -e '.checkpoint // empty' "$f" >/dev/null 2>&1; then
+    echo "── last session left off ─────────────────────────────────────────────"
+    jq -r '"  [\(.checkpoint.time)]\n  \(.checkpoint.note)"' "$f"
+    echo
+  fi
   echo "── state ─────────────────────────────────────────────────────────────"
   campaign_status
   echo
@@ -398,12 +438,14 @@ cmd_campaign() {
   case "${1:-status}" in
     new)    shift; campaign_new "$@" ;;
     use)    shift; campaign_use "$@" ;;
+    rename) shift; campaign_rename "$@" ;;
     list)   shift; campaign_list "$@" ;;
     status) shift; campaign_status "$@" ;;
     resume) shift; campaign_resume "$@" ;;
+    checkpoint) shift; campaign_checkpoint "$@" ;;
     sync)   _sync_network_md; echo "network.md updated" ;;
     dir)    _cdir; echo ;;
-    *) _die "usage: pwnloop campaign <new|use|list|status|resume|sync|dir>" ;;
+    *) _die "usage: pwnloop campaign <new|use|rename|list|status|resume|checkpoint|sync|dir>" ;;
   esac
 }
 

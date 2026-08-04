@@ -326,15 +326,20 @@ So campaign mode adds a second loop above the machine loop, and a state store on
 disk that the agent writes through a CLI instead of by hand.
 
 ```bash
-~/pwnloop/bin/pwnloop campaign new dante 10.10.110.0/24
 cd ~/pwnloop && claude
-> /pwnloop-lab dante 10.10.110.0/24
+> /pwnloop-lab 10.10.110.0/24
 ```
+
+**Pass the entry range only, not the lab's name** — same reason a machine is
+handed over as an address. The campaign directory is derived from the CIDR
+(`campaigns/10-10-110-0-24/`), and you are asked for the name at the end, when
+the run is already on record and the handle is finally free:
+`pwnloop campaign rename dante`.
 
 Days later, in a session that remembers nothing:
 
 ```bash
-> /pwnloop-lab resume dante
+> /pwnloop-lab resume
 ```
 
 `campaign resume` prints the network state, TCP-tests every registered tunnel
@@ -382,7 +387,7 @@ pwnloop engagements        list past engagements and what each one was
 pwnloop banner             print the startup banner
 pwnloop ship [msg]         commit and push your learnings to your own remote
 
-campaign new|use|list|status|resume|sync|dir
+campaign new|use|rename|list|status|resume|sync|dir
 host add|set|list|show     network inventory
 cred add|list              credential store
 try <c> <h> <svc> <result> record a spray attempt; 'try next' suggests untried ones

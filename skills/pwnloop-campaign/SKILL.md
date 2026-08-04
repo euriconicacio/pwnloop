@@ -55,7 +55,7 @@ read flags. Do not ask permission per command or per host.
 
 ```bash
 ~/pwnloop/bin/pwnloop banner
-~/pwnloop/bin/pwnloop campaign new <lab> <entry-cidr>
+~/pwnloop/bin/pwnloop campaign new <entry-cidr>
 ~/pwnloop/bin/pwnloop vpn-status
 ```
 
@@ -73,13 +73,57 @@ campaigns/<lab>/
   routes/         tunnel configs, generated proxychains, PIDs
 ```
 
-**Naming.** A Pro Lab name is a mild recall trigger — weaker than a Machine name,
-since published Pro Lab solutions are scarce and prohibited, but not zero. Use
-the lab name for the directory (a campaign runs for days; a CIDR is a terrible
-handle), and if you recognise the lab, declare it in `CAMPAIGN.md` exactly as the
-single-host skill requires. Every other discovery rule from that skill carries
-over unchanged: never look up the lab's solution, every action traces to an
-artifact you collected, log the near-miss.
+**Work from the entry range alone — do not ask what the lab is called.** The
+directory is named from the CIDR (`campaigns/10-10-110-0-24/`) for exactly the
+reason the single-host loop names engagements after the address: a lab's name is
+a recall trigger, and the most-documented Pro Labs are the ones whose names carry
+the most. You do not need it as a handle either — `campaigns/.current` tracks the
+campaign you are on, so `pwnloop campaign resume` needs no argument.
+
+If the operator supplies a name anyway, use it and record it in `CAMPAIGN.md` as
+a recall risk. Expect the lab to identify itself mid-run through an AD domain or
+a certificate; declare recognition in the ledger the moment it happens, exactly
+as the single-host skill requires, and keep going.
+
+At the very end — after the flags, the report and the write-back — ask what the
+lab is called and `pwnloop campaign rename <name>`. Asking then costs nothing:
+the search order is already on record, and a CIDR is a terrible way to find a
+campaign six months later.
+
+Every other discovery rule carries over unchanged: never look up the lab's
+solution, every action traces to an artifact you collected, log the near-miss.
+
+## Sessions are hours; the lab is longer
+
+Assume the operator has a few hours, not a weekend. That is the normal way a
+campaign is run and the design expects it — but it only works if every session
+ends deliberately instead of just stopping.
+
+**Close every session with a checkpoint**, and write it *before* you are out of
+room, not after:
+
+```bash
+pwnloop campaign checkpoint "172.16.1.5: SeImpersonate confirmed, GodPotato \
+uploaded to C:\\Windows\\Temp\\a.exe but not run — run it first. 10.10.110.11 \
+parked on a 403 at /admin. Next: replay c7 across 172.16.1.0/24."
+```
+
+Write one when: the operator says they are stopping, you are approaching the end
+of your context, or you are about to switch to a different subnet. It is the one
+piece of state the CLI cannot infer — `campaign.json` records what is *true*,
+while the checkpoint records what you were *in the middle of* and why. `resume`
+prints it before anything else.
+
+**Prefer stopping at a clean boundary.** Finish the host you are on, or park it
+explicitly (`host set <ip> status=seen notes="…"`), rather than leaving a
+half-run exploit chain that only exists in your context. A session that ends
+having owned two hosts and written a good checkpoint is worth more than one that
+ends mid-exploit on a third.
+
+Budget roughly: the entry subnet's sweep and first footholds in the opening
+session, one pivot plus the hosts it exposes in each session after. Depth on a
+single host is what to defer, never breadth — breadth is what makes the next
+session cheap.
 
 ## Resuming — read this before anything else
 
@@ -87,12 +131,13 @@ A campaign is resumed far more often than it is started. When the operator says
 "continue", or your context was just reset:
 
 ```bash
-~/pwnloop/bin/pwnloop campaign use <lab>
-~/pwnloop/bin/pwnloop campaign resume
+~/pwnloop/bin/pwnloop campaign resume          # the current campaign
+~/pwnloop/bin/pwnloop campaign list            # if you need to pick another
+~/pwnloop/bin/pwnloop campaign use <dir-name>  # then switch to it
 ```
 
-That prints the state, tests every registered route, and names the open work.
-Then, in this order:
+That prints the last session's checkpoint, the state, a live test of every
+registered route, and the open work. Then, in this order:
 
 1. **VPN first.** `pwnloop vpn-status`. A dead VPN makes every route look dead.
 2. **Re-establish every route reported `down`** before touching anything behind
