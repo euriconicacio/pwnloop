@@ -6,7 +6,7 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate
 
 Campaign: $ARGUMENTS
 
-Use the `pwnloop-campaign` skill.
+Use the `pwnloop-lab` skill.
 
 If the argument is `resume` (optionally followed by a campaign directory name),
 this is an existing campaign: run `pwnloop campaign resume`, re-establish every

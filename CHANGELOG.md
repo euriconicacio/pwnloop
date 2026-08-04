@@ -32,11 +32,24 @@ The single-host loop is unchanged and becomes the inner loop.
 
 **Added**
 
-- `skills/pwnloop-campaign/` — the outer loop: frontier-based target selection,
+- `skills/pwnloop-lab/` — the outer loop: frontier-based target selection,
   the resume protocol, credential handling at lab scale, per-host delegation, and
   the Pro Lab publication rule (no publishable write-up — Pro Labs never retire).
-- `commands/pwnloop-lab.md` — `/pwnloop-lab <lab> <cidr>` and
-  `/pwnloop-lab resume <lab>`.
+  Skill and command share a name, as `pwnloop` and `/pwnloop` do; two names for
+  one capability read as two capabilities.
+- `commands/pwnloop-lab.md` — `/pwnloop-lab <entry-ip|entry-cidr>` and
+  `/pwnloop-lab resume`. **The lab's name is not an argument**: the directory is
+  derived from the entry point (`campaigns/10-10-110-5/`), `campaigns/.current`
+  is the handle, and `campaign rename` runs at the end — the same trade the
+  single-host loop makes with machine names, for the same recall reason.
+- Single-host entry points, the common Pro Lab shape: phase 0 is an ordinary
+  single-host engagement, the campaign begins at the first shell (interfaces,
+  routes, trusts before local escalation), and resume verifies the entry host
+  before any route, since it is the first hop of every chain.
+- `campaign checkpoint` — a session is hours, a lab is longer. The state file
+  records what is true; the checkpoint records what you were in the middle of and
+  what you would have done next, which is the part that cannot be inferred.
+  `resume` prints it first.
 - `references/delegation.md` — the per-host subagent brief and the structured
   receipt it must return, plus what is never delegated (scope calls, cleanup,
   methodology write-back). Context, not time, is the scarce resource on a

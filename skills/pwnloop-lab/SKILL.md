@@ -1,5 +1,5 @@
 ---
-name: pwnloop-campaign
+name: pwnloop-lab
 description: Run a multi-host lab campaign end to end — an HTB Pro Lab (Dante, Offshore, RastaLabs, Cybernetics, APTLabs, Zephyr, Genesis), a multi-machine AD range, or any authorized network engagement whose target is a network rather than one box. Handles network state across sessions, pivoting into internal subnets, credential replay at scale and per-host delegation. Use whenever the operator gives a CIDR, names a Pro Lab, gives a single entry host that fronts an internal network, or asks to resume a campaign already in progress.
 ---
 

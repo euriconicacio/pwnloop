@@ -35,7 +35,7 @@ slash command or by invoking this skill directly — both must behave the same:
 
 **If the target is a network rather than a host** — a CIDR, a named Pro Lab, or
 an engagement already under `campaigns/` — this is the wrong skill on its own.
-Use `pwnloop-campaign`, which keeps the network state across sessions and calls
+Use `pwnloop-lab`, which keeps the network state across sessions and calls
 this loop once per host.
 
 ## Scope contract (check once, then stop asking)

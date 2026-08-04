@@ -471,7 +471,7 @@ on demand rather than all at once:
 | `reporting.md` | chain-first, defender-facing report structure |
 | `writeup.md` | publishable write-up structure and redaction rules |
 
-`skills/pwnloop-campaign/SKILL.md` is the multi-host counterpart: the frontier
+`skills/pwnloop-lab/SKILL.md` is the multi-host counterpart: the frontier
 loop, the resume protocol, credential handling at lab scale, per-host delegation
 and the Pro Lab publication rule. It reuses every reference above — the technique
 library is shared; what differs is what decides the next move.
