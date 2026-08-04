@@ -327,14 +327,21 @@ disk that the agent writes through a CLI instead of by hand.
 
 ```bash
 cd ~/pwnloop && claude
-> /pwnloop-lab 10.10.110.0/24
+> /pwnloop-lab 10.10.110.0/24     # an entry range
+> /pwnloop-lab 10.10.110.5        # or a single entry host
 ```
 
-**Pass the entry range only, not the lab's name** — same reason a machine is
-handed over as an address. The campaign directory is derived from the CIDR
+**Pass the entry point only, not the lab's name** — same reason a machine is
+handed over as an address. The campaign directory is derived from it
 (`campaigns/10-10-110-0-24/`), and you are asked for the name at the end, when
 the run is already on record and the handle is finally free:
 `pwnloop campaign rename dante`.
+
+When the entry point is a single host — the common Pro Lab shape — the first
+session is an ordinary single-host engagement, and the campaign proper starts at
+the first shell: mapping the interfaces, routes and trusts behind that host
+outranks escalating on it, because a second NIC is the actual door and root
+without it is a dead end with a flag attached.
 
 Days later, in a session that remembers nothing:
 

@@ -1,6 +1,6 @@
 ---
 name: pwnloop-campaign
-description: Run a multi-host lab campaign end to end — an HTB Pro Lab (Dante, Offshore, RastaLabs, Cybernetics, APTLabs, Zephyr, Genesis), a multi-machine AD range, or any authorized network engagement where the target is a subnet rather than a single host. Handles network state across sessions, pivoting into internal subnets, credential replay at scale and per-host delegation. Use whenever the operator gives a CIDR instead of an IP, names a Pro Lab, or asks to resume a campaign already in progress.
+description: Run a multi-host lab campaign end to end — an HTB Pro Lab (Dante, Offshore, RastaLabs, Cybernetics, APTLabs, Zephyr, Genesis), a multi-machine AD range, or any authorized network engagement whose target is a network rather than one box. Handles network state across sessions, pivoting into internal subnets, credential replay at scale and per-host delegation. Use whenever the operator gives a CIDR, names a Pro Lab, gives a single entry host that fronts an internal network, or asks to resume a campaign already in progress.
 ---
 
 # Lab campaign — multi-host autonomous engagement
@@ -36,9 +36,49 @@ fact matters after the current host, it goes through the state CLI the moment yo
 learn it. Assume you will be resumed by a session that has read nothing but
 `pwnloop campaign resume`.
 
+## When the entry point is a single host
+
+Many labs hand you one address and nothing else — the network exists, but none of
+it is reachable until that host falls. Then the campaign has a shape the rest of
+this skill does not describe yet:
+
+**Phase 0 is a single-host engagement.** Run `skills/pwnloop/SKILL.md` against
+the entry IP exactly as written, with its 15-minute rabbit-hole time-box, not the
+45-minute one below. There is no breadth to prefer and no frontier to rank: the
+entry host *is* the frontier, and depth on it is the only move. Record state
+through the campaign CLI from the first minute anyway (`host add`, `cred add`,
+`try`) — that is what makes the transition free.
+
+**The campaign begins at the first shell.** The moment you have any access on the
+entry host, mapping outward outranks escalating locally:
+
+```bash
+ip route; ip -4 addr; arp -a; cat /etc/resolv.conf; cat /etc/hosts
+route print; ipconfig /all; arp -a; nltest /domain_trusts
+```
+
+Every interface, route, ARP entry, DNS server and domain becomes a
+`lead add kind=subnet` or a `host add` before you go back to privesc. A second
+NIC on the entry host is the actual entry point to the lab; root on the entry
+host without it is a dead end with a flag attached.
+
+Then build the pivot (`references/pivoting.md`) and register it with a canary.
+From that point the normal campaign loop applies: breadth first, matrix replay,
+frontier ranking.
+
+**The entry host is a single point of failure for everything behind it.** Every
+route's `via` chain terminates there, so if it is reset, the whole campaign goes
+dark at once and each tunnel has to be rebuilt from scratch. On resume, verify
+the entry host *before* testing any route — a dead entry host explains every
+other symptom, and debugging the far end of a chain whose first hop is gone is
+the most expensive mistake available here. Keep the foothold cheap to re-enter:
+prefer a mechanism you can replay in a minute (a credential, a key you planted
+and recorded) over an exploit chain you would have to rebuild.
+
 ## Scope contract
 
-A campaign's scope is the CIDR(s) the operator named when it was created, plus
+A campaign's scope is the address or CIDR(s) the operator named when it was
+created, plus
 **subnets discovered from inside an owned host** — a second interface, a route
 table, an ARP cache, a DNS zone. Those are in scope because the lab put them
 there; record each one with `pwnloop lead add kind=subnet` and expand into it.
@@ -55,7 +95,8 @@ read flags. Do not ask permission per command or per host.
 
 ```bash
 ~/pwnloop/bin/pwnloop banner
-~/pwnloop/bin/pwnloop campaign new <entry-cidr>
+~/pwnloop/bin/pwnloop campaign new 10.10.110.0/24    # an entry range
+~/pwnloop/bin/pwnloop campaign new 10.10.110.5       # or a single entry host
 ~/pwnloop/bin/pwnloop vpn-status
 ```
 
@@ -120,9 +161,10 @@ half-run exploit chain that only exists in your context. A session that ends
 having owned two hosts and written a good checkpoint is worth more than one that
 ends mid-exploit on a third.
 
-Budget roughly: the entry subnet's sweep and first footholds in the opening
-session, one pivot plus the hosts it exposes in each session after. Depth on a
-single host is what to defer, never breadth — breadth is what makes the next
+Budget roughly: the opening session takes the entry point — a subnet sweep and
+its first footholds, or, when the entry is one host, that host plus the map of
+what lies behind it. Each session after that is one pivot plus the hosts it
+exposes. Depth is what to defer, never breadth — breadth is what makes the next
 session cheap.
 
 ## Resuming — read this before anything else
@@ -140,7 +182,10 @@ That prints the last session's checkpoint, the state, a live test of every
 registered route, and the open work. Then, in this order:
 
 1. **VPN first.** `pwnloop vpn-status`. A dead VPN makes every route look dead.
-2. **Re-establish every route reported `down`** before touching anything behind
+2. **Then the entry host**, before any route: it is the first hop of every chain,
+   so if it was reset, every route below is dead for one reason and re-testing
+   them individually tells you nothing.
+3. **Re-establish every route reported `down`** before touching anything behind
    it — see `pwnloop/references/pivoting.md`. A lab reset kills every tunnel
    while `campaign.json` still claims the subnet is reachable; acting on a stale
    route wastes a whole cycle and looks like the target changed.
@@ -173,10 +218,11 @@ run: on a campaign, switching costs more, and the credential you need may come
 from a host you have not touched yet. Park it (`pwnloop host set <ip>
 status=seen notes=...`) and move on.
 
-**Do not chase depth on the first host that gives you a shell.** Sweep the entry
-subnet for footholds first — a campaign's early value is breadth (more hosts →
-more credentials → more reach), and depth on host #1 often needs a secret that
-lives on host #4.
+**Once you reach a subnet, do not chase depth on the first host that answers.**
+Sweep it for footholds first — a campaign's early value is breadth (more hosts →
+more credentials → more reach), and depth on one host often needs a secret that
+lives on another. The exception is the single entry host above, where breadth
+does not exist yet and depth is the only path.
 
 ## Recording state — the CLI is the only writer
 

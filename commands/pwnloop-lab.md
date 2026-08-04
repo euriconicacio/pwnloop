@@ -1,6 +1,6 @@
 ---
-description: Run or resume an autonomous multi-host campaign (HTB Pro Lab, AD range). Usage: /pwnloop-lab <entry-cidr> — pass the range only, not the lab's name. /pwnloop-lab resume continues the current one.
-argument-hint: <entry-cidr> | resume
+description: Run or resume an autonomous multi-host campaign (HTB Pro Lab, AD range). Usage: /pwnloop-lab <entry-ip-or-cidr> — pass the entry point only, not the lab's name. /pwnloop-lab resume continues the current one.
+argument-hint: <entry-ip|entry-cidr> | resume
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, WebSearch, WebFetch
 ---
 
@@ -13,8 +13,13 @@ this is an existing campaign: run `pwnloop campaign resume`, re-establish every
 route reported down, re-verify one owned host per subnet, and continue from the
 frontier. Do not re-enumerate what the state file says is already done.
 
-Otherwise create it with `pwnloop campaign new <cidr>` and start from the entry
-subnet. **Work from the range alone — do not ask me what the lab is called.**
+Otherwise create it with `pwnloop campaign new <entry>` and start there. If the
+entry point is a single host, that host is the whole campaign until it falls: run
+the single-host loop against it, and the moment you have any shell, map outward
+(interfaces, routes, ARP, DNS, domain trusts) before escalating locally — the
+internal subnets are the campaign.
+
+**Work from the entry point alone — do not ask me what the lab is called.**
 The name is a recall trigger and I am withholding it deliberately; the directory
 is named after the CIDR. Ask me for the name at the very end and
 `pwnloop campaign rename` it then. If the lab identifies itself mid-run and you
