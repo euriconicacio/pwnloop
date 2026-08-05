@@ -14,6 +14,7 @@
 #   pwnloop engagements        list past engagements and what each one was
 #   pwnloop banner             print the startup banner
 #   pwnloop ship [msg]         commit and push your learnings to your own remote
+#   pwnloop backup [--full]    encrypted archive of what git does not track
 #
 # Multi-host campaigns (Pro Labs) — state store, see bin/lib/campaign.sh:
 #   pwnloop campaign <new|use|list|status|resume|sync|dir>
@@ -95,6 +96,78 @@ cmd_status() {
   echo "image:     $(docker images -q "$IMAGE" | head -1 || echo '<none>')"
   echo "container: $(running && echo running || echo stopped)"
   running && cmd_x 'for t in nmap ffuf feroxbuster nxc netexec impacket-secretsdump evil-winrm sqlmap hydra john searchsploit openvpn; do printf "%-22s %s\n" "$t" "$(command -v $t || echo -)"; done; echo; ip -4 addr show tun0 2>/dev/null | grep inet || echo "tun0: down"'
+}
+
+# Encrypted backup of everything this clone knows that git does not.
+#
+# The intuition is that none of this needs backing up, and for most of the bytes
+# that is right: an engagement's durable half is its write-up, which is already
+# published in the repository. Two things break that rule and they are the two
+# with no replication path at all — `memory/local.md`, which is the entire
+# second loop, and `campaigns/`, which by design produces no publishable
+# artifact and is therefore its own only record.
+#
+# Encrypted because the same archive holds flags, credentials and loot, and
+# unencrypted backups of those end up on cloud drives. `vpn/` is never included:
+# it is re-downloadable from the platform and is the one thing whose leak costs
+# something.
+cmd_backup() {
+  local full=0
+  [ "${1:-}" = "--full" ] && { full=1; shift; }
+  local dest="${1:-$HOME/pwnloop-backups}"
+
+  [ -t 0 ] || { echo "run this from a terminal — it prompts for a passphrase" >&2; exit 1; }
+
+  # An archive of flags and loot inside the repository is one `git add -A` away
+  # from being committed, whatever the hook says.
+  case "$(cd "$dest" 2>/dev/null && pwd || echo "$dest")" in
+    "$LAB_DIR"|"$LAB_DIR"/*) echo "refusing to write the backup inside the repository" >&2; exit 1 ;;
+  esac
+
+  # LibreSSL (/usr/bin/openssl on macOS) has no -pbkdf2, which would leave the
+  # passphrase stretched by a single MD5 pass.
+  local ssl; ssl=$(command -v openssl) || { echo "openssl not found" >&2; exit 1; }
+  "$ssl" enc -help 2>&1 | grep -q -- -pbkdf2 || {
+    echo "this openssl has no -pbkdf2 (LibreSSL?). Install one: brew install openssl" >&2; exit 1; }
+
+  mkdir -p "$dest"
+  local stamp; stamp=$(date -u '+%Y-%m-%d-%H%M')
+  local out="$dest/pwnloop-$stamp.tar.gz"
+
+  local items=() skipped=()
+  for f in memory/local.md flags.local.md docker/packages.local.txt campaigns; do
+    [ -e "$LAB_DIR/$f" ] && items+=("$f") || skipped+=("$f")
+  done
+  if [ "$full" -eq 1 ]; then
+    [ -d "$LAB_DIR/engagements" ] && items+=("engagements")
+  fi
+  [ ${#items[@]} -gt 0 ] || { echo "nothing to back up" >&2; exit 1; }
+
+  echo "archiving: ${items[*]}"
+  tar czf "$out" -C "$LAB_DIR" \
+      --exclude='vpn' --exclude='*.ovpn' --exclude='.DS_Store' "${items[@]}" || {
+    rm -f "$out"; echo "tar failed" >&2; exit 1; }
+
+  # openssl enc gives confidentiality but no integrity, so the plaintext digest
+  # is kept beside the archive: it is what tells you a restore is intact.
+  shasum -a 256 "$out" | awk '{print $1}' > "$out.sha256"
+
+  echo "encrypting (passphrase is asked twice, and cannot be recovered):"
+  "$ssl" enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -in "$out" -out "$out.enc" || {
+    rm -f "$out" "$out.enc" "$out.sha256"; echo "encryption failed — nothing written" >&2; exit 1; }
+  rm -f "$out"
+
+  echo
+  echo "wrote $out.enc ($(du -h "$out.enc" | cut -f1))"
+  echo "     $(basename "$out").sha256  — digest of the archive inside"
+  [ ${#skipped[@]} -gt 0 ] && echo "not present, so not included: ${skipped[*]}"
+  [ "$full" -eq 1 ] || echo "engagements/ excluded (write-ups already cover them) — use --full to include"
+  echo "vpn/ excluded, always."
+  echo
+  echo "restore:"
+  echo "  openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in $(basename "$out").enc -out restored.tar.gz"
+  echo "  shasum -a 256 -c <(echo \"\$(cat $(basename "$out").sha256)  restored.tar.gz\")"
+  echo "  tar xzf restored.tar.gz"
 }
 
 # Commit and push what your engagements taught this clone, to your own remote.
@@ -213,6 +286,7 @@ case "${1:-}" in
   engagements) cmd_engagements ;;
   banner) cmd_banner ;;
   ship) shift; cmd_ship "$@" ;;
+  backup) shift; cmd_backup "$@" ;;
   campaign) shift; cmd_campaign "$@" ;;
   host) shift; cmd_host "$@" ;;
   cred) shift; cmd_cred "$@" ;;

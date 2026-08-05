@@ -411,6 +411,7 @@ pwnloop flags              show locally captured flags
 pwnloop engagements        list past engagements and what each one was
 pwnloop banner             print the startup banner
 pwnloop ship [msg]         commit and push your learnings to your own remote
+pwnloop backup [--full]    encrypted archive of what git does not track
 
 campaign new|use|rename|list|status|resume|sync|dir
 host add|set|list|show     network inventory

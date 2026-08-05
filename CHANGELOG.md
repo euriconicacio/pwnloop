@@ -46,6 +46,17 @@ The single-host loop is unchanged and becomes the inner loop.
   single-host engagement, the campaign begins at the first shell (interfaces,
   routes, trusts before local escalation), and resume verifies the entry host
   before any route, since it is the first hop of every chain.
+- `pwnloop backup [--full]` — an encrypted archive of everything git does not
+  track. The instinct that none of it needs backing up holds for most of the
+  bytes, since an engagement's durable half is its published write-up, and fails
+  for exactly the two things with no replication path: `memory/local.md`, which
+  is the whole second loop, and `campaigns/`, which by design produces no
+  publishable artifact and is therefore its own only record. `vpn/` is never
+  included — re-downloadable, and the one thing whose leak costs something.
+  AES-256 with PBKDF2, plus a plaintext digest beside the archive because
+  `openssl enc` gives confidentiality and no integrity. Refuses to write inside
+  the repository, where an archive of flags and loot is one `git add -A` from
+  being committed.
 - `campaign checkpoint` — a session is hours, a lab is longer. The state file
   records what is true; the checkpoint records what you were in the middle of and
   what you would have done next, which is the part that cannot be inferred.
