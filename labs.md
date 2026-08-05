@@ -18,7 +18,7 @@ before buying it.
 
 | lab | platform | hosts | flags | sessions | wall-clock | what it changed | verified |
 |-----|----------|-------|-------|----------|------------|-----------------|----------|
-| _no campaign closed out yet_ | | | | | | | |
+| Puppet | HTB Mini Pro Labs | 3 / 3 owned | 4 / 4 | 7 | ~4h30 | [1.8.0](CHANGELOG.md#180--2026-08-05) | HTBCERT-0398EDB2AC |
 
 **Columns.** `hosts` is owned/total-discovered and `flags` is captured/total —
 both are progress figures the platform already displays on a public profile, not

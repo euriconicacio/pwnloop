@@ -470,6 +470,8 @@ Read these on demand, not upfront:
 - `references/ad.md` — AS-REP/Kerberoast, DACL edges, delegation (unconstrained/constrained/RBCD), shadow credentials, DCSync, local Kerberos relay
 - `references/adcs.md` — AD CS ESC1–ESC16, certificate theft, golden-cert and DACL persistence
 - `references/relay.md` — NTLM/Kerberos coercion (PetitPotam/PrinterBug/DFSCoerce) and relay target matrix
+- `references/devops.md` — configuration-management and deployment platforms: fleet-wide RCE, agent certificates, catalogs as credential stores
+- `references/c2-ops.md` — operating through a C2 framework: operator configs as credentials, per-call state, quoting, in-band transport limits
 - `references/pivoting.md` — chisel, ligolo-ng, ssh tunnels, proxychains
 - `references/reporting.md` — defender-facing report structure
 - `references/writeup.md` — publishable write-up structure and redaction rules

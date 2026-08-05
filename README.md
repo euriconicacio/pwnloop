@@ -138,7 +138,7 @@ every time it runs, because the run is required to write back into it.
 | | run | published as |
 |---|---|---|
 | **Machines** | 14 rooted, Easy through Insane, Linux / Windows / AD / k8s | [`writeups/`](writeups/) — full chains, retired targets only |
-| **Pro Labs** | see [`labs.md`](labs.md) | results and methodology only — never a chain |
+| **Pro Labs** | 1 completed — 3/3 hosts, 4/4 flags | [`labs.md`](labs.md) — results and methodology only, never a chain |
 
 Two different bars on purpose. A retired machine can be published in full, so its
 write-up is the artifact. A Pro Lab never retires, so the artifact is the
@@ -486,6 +486,8 @@ on demand rather than all at once:
 | `ad.md` | AS-REP roasting, Kerberoast, DACL edges, delegation, shadow credentials, DCSync |
 | `adcs.md` | AD CS ESC1–ESC16, certificate theft, golden-cert and DACL persistence |
 | `relay.md` | NTLM/Kerberos coercion (PetitPotam/PrinterBug/DFSCoerce) and the relay target matrix |
+| `devops.md` | configuration-management and deployment platforms: fleet RCE, agent certs, catalogs |
+| `c2-ops.md` | operating through a C2 framework: operator configs, per-call state, transport limits |
 | `pivoting.md` | mechanism choice, ligolo-ng/chisel/SSH, double pivots, tunnel recovery |
 | `reporting.md` | chain-first, defender-facing report structure |
 | `writeup.md` | publishable write-up structure and redaction rules |

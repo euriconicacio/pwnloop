@@ -139,6 +139,17 @@ pwnloop x "proxychains4 -q nxc smb 172.16.1.0/24"
 `-sS`, UDP and ICMP do not — if a scan through a proxy says "nothing open",
 re-check through a TUN route before believing it.
 
+## Bulk transfer does not belong in the tunnel
+
+A SOCKS proxy or in-band C2 tunnel is for control traffic. Large transfers over
+one — signed SMB writes especially — corrupt or stall, and the symptom reads as
+a broken technique rather than a broken transport.
+
+Stage the file on a host you already own *inside* the target segment, share it
+there, and have the target pull it over the internal network at full speed;
+route only the small operations through the proxy. Reverse the same shape for
+pulling a large dump out.
+
 ## Discovery from inside
 
 The moment you own a host, mine it for the next subnet:

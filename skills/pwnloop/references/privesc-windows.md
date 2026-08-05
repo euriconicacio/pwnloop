@@ -158,6 +158,29 @@ reg query "HKCU\Software\Microsoft\Terminal Server Client\Servers"
 logins, `.git-credentials`, WSL, and app config in `%APPDATA%`/`%LOCALAPPDATA%`
 are all worth a pass. Wi-Fi keys: `netsh wlan show profile <n> key=clear`.
 
+## When LSASS cannot be read
+
+PPL/Credential Guard, EDR, or a plain lack of `SeDebugPrivilege` all end the same
+way: no process dump. The registry route needs only backup rights and is quieter:
+
+```
+reg save HKLM\\SAM sam.hiv & reg save HKLM\\SYSTEM sys.hiv & reg save HKLM\\SECURITY sec.hiv
+```
+```bash
+pwnloop x "impacket-secretsdump -sam sam.hiv -system sys.hiv -security sec.hiv LOCAL"
+```
+
+Three distinct payloads come out, and the last two are routinely overlooked:
+
+- **local NT hashes** — lateral movement to other machines sharing an account;
+- **cached domain credentials (DCC2/MSCache2)** — of the domain users who have
+  logged in here. Not usable for pass-the-hash, crackable only, but they name the
+  accounts that matter on this host;
+- **LSA secrets** — the cleartext passwords of accounts registered as *services*
+  (`_SC_<service>`), plus `DefaultPassword` from autologon. A service account
+  password recovered this way is a domain credential in plain text, which is
+  usually worth more than everything else in the dump.
+
 ## DPAPI
 
 User secrets (browser cookies, saved RDP/creds, some cert keys) are
@@ -169,6 +192,12 @@ pwnloop x "impacket-dpapi credential -file <blob> -key <decrypted-mk>"
 As SYSTEM, the `DPAPI_SYSTEM` LSA secret decrypts every machine blob —
 `SharpDPAPI`/`mimikatz lsadump::secrets`. This is often the bridge from local
 admin to a *domain* credential stashed in a user profile.
+
+**When an NT hash will not crack, look for the cleartext instead.** A machine
+triage (`SharpDPAPI machinetriage`, `mimikatz lsadump::secrets`) reaches
+credentials stored by scheduled tasks and services — those are held so the system
+can *use* them, so they decrypt to plaintext. An account whose hash is
+uncrackable is frequently sitting in cleartext one DPAPI blob away.
 
 ## LAPS and gMSA
 

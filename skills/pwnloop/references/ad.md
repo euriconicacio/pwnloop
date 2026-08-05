@@ -41,6 +41,24 @@ pwnloop x "faketime \"\$(date -u -d '+7 hours 59 minutes 55 seconds' '+%F %T')\"
 See the AD CS section below for the worked example — PKINIT is where this stops
 being an annoyance and starts being a blocker.
 
+## Read the failure code, not just the failure
+
+A rejected authentication says which of two very different things happened, and
+the distinction decides your next hour:
+
+- `access denied` (Windows error 5, `STATUS_ACCESS_DENIED`) — **the credential is
+  valid**; it simply lacks rights on that resource. You have a working domain
+  account and should now find what it *can* reach.
+- `bad username or password` (error 1326, `STATUS_LOGON_FAILURE`) — the
+  credential is wrong.
+
+Treating the first as a failure throws away a confirmed credential. The same
+applies to Kerberos pre-auth codes and to SSH: a public key rejected *before* a
+signature is requested means the key was never authorised, which is not a lockout
+and must not be retried aggressively — where keys are distributed centrally
+(LDAP/SSSD, a share), your access depends on that directory being healthy, and
+hammering it only risks a real lockout.
+
 ## AS-REP roasting (no creds needed, just usernames)
 
 ```bash

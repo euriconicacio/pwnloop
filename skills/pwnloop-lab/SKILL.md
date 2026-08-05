@@ -476,5 +476,7 @@ whole frontier with no new leads.
 
 - `references/state-cli.md` — every state command, the schema, and the habits
 - `references/delegation.md` — per-host subagent brief and required return
+- `pwnloop/references/devops.md` — deployment platforms as fleet-wide RCE
+- `pwnloop/references/c2-ops.md` — operating through a C2 framework
 - `pwnloop/references/pivoting.md` — tunnels, multi-hop, route recovery
 - `pwnloop/references/*` — the full technique library, shared with the host loop

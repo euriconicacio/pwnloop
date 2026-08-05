@@ -20,6 +20,57 @@ Engagements are expected to change the methodology (see `memory/patterns.md`),
 so minor releases are the normal cadence. An entry that says only "ran a box"
 does not belong here — what belongs is what the run *changed*.
 
+## [1.8.0] — 2026-08-05
+
+The first campaign run to completion: a mini Pro Lab, three hosts, four flags.
+What follows is what it changed — the lab's own path is not here and will not be,
+since a Pro Lab never retires.
+
+Two capability gaps it exposed are worth naming, because both had been invisible
+while the loop only ever ran against single machines: the reference set had
+nothing on **deployment infrastructure**, and nothing on **operating through a C2
+framework** — which is how a modern internal engagement actually moves.
+
+### Added
+
+- **`references/devops.md`** — configuration-management and deployment platforms
+  (Puppet, Chef, Salt, Ansible, SCCM) as the highest-value internal target: they
+  are authenticated APIs whose purpose is to run code as root or SYSTEM on every
+  node they manage. Covers enumerating them as an API rather than a web server;
+  mutual TLS where the client certificate sits on every managed host; why
+  impersonating another node fails by design and driving an agent you already own
+  succeeds instead; both directions of attack; that a hung master may be
+  *defective* rather than defended, so repairing it can be a necessary step; and
+  the heavier cleanup obligation that comes with a platform that re-applies
+  changes on a schedule.
+- **`references/c2-ops.md`** — driving a framework rather than a shell. An
+  operator configuration file is a credential and a team-server port is a login
+  prompt. Every `execute` is a fresh process, so authentication does not persist
+  between calls and must be established in-call or through an impersonation
+  primitive. Console parsers mangle nested quoting — encode the payload instead
+  of fighting them. In-band SOCKS is for control traffic, never bulk: stage
+  transfers inside the segment and let the target pull locally. And when every
+  implant dies at once, read it as an environment event and do not hammer the
+  fallback.
+- **`references/ad.md`: read the failure code, not just the failure.** Windows
+  error 5 means the credential is *valid* and merely unauthorised, while 1326
+  means it is wrong — treating the first as a failure discards a confirmed
+  account. Extended to Kerberos pre-auth codes and to SSH, where a public key
+  rejected before a signature is requested is not a lockout, and where centrally
+  distributed keys make access depend on the directory's health.
+- **`references/privesc-windows.md`: when LSASS cannot be read.** The registry
+  route needs only backup rights, and two of its three payloads are routinely
+  overlooked — cached domain credentials naming the accounts that matter on that
+  host, and LSA secrets holding the *cleartext* passwords of service accounts.
+  Also: when an NT hash will not crack, a DPAPI machine triage often has the same
+  account in plaintext, because scheduled tasks and services store credentials in
+  a form the system can use.
+- **`references/pivoting.md`: bulk transfer does not belong in the tunnel.**
+  Large writes over a proxy corrupt or stall, and the symptom reads as a broken
+  technique rather than a broken transport.
+- **`labs.md`** — the first results row, with the platform's completion
+  certificate as the verification.
+
 ## [1.7.0] — 2026-08-05
 
 ### Campaign mode — multi-host labs
