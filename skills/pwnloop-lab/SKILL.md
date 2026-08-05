@@ -378,6 +378,20 @@ produces is deliberately skipped here; everything stays in the (gitignored)
 campaign directory. If the operator asks for one anyway, say this once, and if
 they confirm, write it and mark it clearly as non-publishable.
 
+**Then materialise the result where it is allowed to exist:** add a row to
+`labs.md` in the repository root — hosts owned/total, flags captured/total,
+sessions, wall-clock, links to the CHANGELOG entries the run produced, and a
+link to the platform's own completion certificate or badge. Numbers and
+platform-issued proof are not a solution: they say a network fell and what the
+loop learned, without saying what any host was running. That row, the
+`references/` entries, and an optional post-mortem *about the harness* are the
+whole publishable output of a campaign. Read `labs.md` before writing the row —
+it states exactly what may and may not go in it.
+
+A campaign that captured every flag and changed nothing in the methodology is
+worth reporting as exactly that. It means the loop already knew everything the
+lab had to teach — a real result, and a rarer one than a new reference entry.
+
 Flags follow the same rule as always: `pwnloop flag` writes them to
 `flags.local.md` and the campaign state, both gitignored, and they are printed in
 chat the moment they are read — one per line, so the operator can submit while

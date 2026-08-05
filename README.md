@@ -375,7 +375,11 @@ subagent keeps one box's detail, and nothing is lost when its context ends.
 
 Pro Labs never retire, so campaign mode deliberately does **not** produce a
 publishable write-up — only the defender-facing report, inside the gitignored
-campaign directory. See [Platform rules](#platform-rules).
+campaign directory. What a campaign *does* publish is in [`labs.md`](labs.md):
+hosts owned, flags captured, sessions, wall-clock, the methodology it changed,
+and a link to the platform's own completion certificate. Proof of completion is
+issued by the target rather than asserted by the attacker, and none of those
+numbers say what any host was running. See [Platform rules](#platform-rules).
 
 ## Command reference
 
