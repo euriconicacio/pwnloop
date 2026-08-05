@@ -427,18 +427,23 @@ the write-back rule that is about methodology quality on a machine is also a
 platform-rules boundary here, and it is the one place where a well-intentioned
 reference entry can do real damage.
 
-Write the **class**, never the chain. Two examples from the same discovery:
+Write the **class**, never the chain. The difference is in what the entry lets a
+reader do:
 
-> ✗ "Puppet master on 8140 with CA pm01 → pull the agent cert from the file
-> server → POST `/puppet/v3/catalog/<node>` → the catalog carries the deploy
-> credential." — that is this lab's answer, written down in public.
+> ✗ An entry that names the product and version, the port, the exact endpoint
+> you called and the order you called it in. Filing off the hostnames does not
+> help: anyone holding the lab can follow it step by step, and the product alone,
+> in an entry added the week a lab was completed, is enough to identify which lab
+> it was.
 >
-> ✓ "A configuration-management master (Puppet/Chef/Salt/Ansible/SCCM) is a
-> credential hub and an RCE fan-out: it authenticates its agents with certs you
-> can often steal from any managed host, and the compiled catalog it serves
-> contains the secrets it is meant to deploy. Enumerate it as an authenticated
-> API, not as a web server." — that is the technique, and it works on targets
-> that have nothing to do with this lab.
+> ✓ An entry that names the *class* of system, explains why that class is a
+> credential hub or an RCE fan-out, and says what to enumerate and in what order
+> — written so it applies to targets that have nothing to do with this lab, and
+> so that someone who has never heard of the lab gets the full value.
+
+If the technique genuinely needs a concrete example to be teachable, take one
+from a **retired machine** or from public vendor documentation — never from the
+campaign that prompted the entry.
 
 **The test before you commit an entry:** could a reader use it to identify the
 lab, or to skip a step on it? If yes, it belongs in `memory/local.md`, which is

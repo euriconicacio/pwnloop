@@ -15,7 +15,7 @@
 #   pwnloop banner             print the startup banner
 #   pwnloop ship [msg]         commit and push your learnings to your own remote
 #   pwnloop backup [--full]    encrypted archive of what git does not track
-#   pwnloop audit [base]       what a release must never carry — run before push
+#   pwnloop audit [base] [tip]  what a release must never carry — run before push
 #
 # Multi-host campaigns (Pro Labs) — state store, see bin/lib/campaign.sh:
 #   pwnloop campaign <new|use|list|status|resume|sync|dir>
@@ -188,14 +188,18 @@ cmd_backup() {
 # are printed for a human to read rather than blocked.
 cmd_audit() {
   cd "$LAB_DIR" || exit 1
-  local base="${1:-main}"
-  git rev-parse --verify -q "$base" >/dev/null || { echo "no such ref: $base" >&2; exit 1; }
+  # A second ref lets you audit a branch you are not standing on — which is the
+  # normal case, since the release being audited is the one about to be merged.
+  local base="${1:-main}" tip="${2:-HEAD}"
+  for r in "$base" "$tip"; do
+    git rev-parse --verify -q "$r" >/dev/null || { echo "no such ref: $r" >&2; exit 1; }
+  done
 
   local hard=0 review=0 added files
-  files=$(git diff --name-only "$base"...HEAD)
-  added=$(git diff "$base"...HEAD -- . | grep '^+' | grep -v '^+++' || true)
+  files=$(git diff --name-only "$base...$tip")
+  added=$(git diff "$base...$tip" -- . | grep '^+' | grep -v '^+++' || true)
 
-  echo "auditing $base...HEAD — $(printf '%s' "$files" | grep -c . || true) file(s)"
+  echo "auditing $base...$tip — $(printf '%s' "$files" | grep -c . || true) file(s)"
   echo
 
   _hard() { printf '\033[31mFAIL\033[0m  %s\n' "$1"; hard=$((hard + 1)); }
@@ -245,7 +249,7 @@ cmd_audit() {
   fi
 
   # 5. Language that may describe assistance rather than methodology.
-  hits=$(git diff "$base"...HEAD -- . | grep '^+' | grep -v '^+++' \
+  hits=$(git diff "$base...$tip" -- . | grep '^+' | grep -v '^+++' \
          | grep -inE 'steer|hint|walkthrough|recognition|prior knowledge|you (said|told|asked|suggested)' || true)
   if [ -n "$hits" ]; then
     _rev "$(printf '%s\n' "$hits" | wc -l | tr -d ' ') line(s) mention steer/hint/recognition — confirm each states a rule rather than a disclosure:"
@@ -360,7 +364,7 @@ cmd_flags() {
 # Campaign state lives in its own file: it is a third of this script's size and
 # only a multi-host engagement ever touches it.
 # shellcheck source=lib/campaign.sh
-. "$LAB_DIR/bin/lib/campaign.sh"
+[ -f "$LAB_DIR/bin/lib/campaign.sh" ] && . "$LAB_DIR/bin/lib/campaign.sh"
 
 case "${1:-}" in
   build) shift; cmd_build "$@" ;;
