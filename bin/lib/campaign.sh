@@ -511,10 +511,19 @@ flag_add() {
   local lab; lab=$(_lab)
   local f; f=$(_cjson)
   jq -e --arg ip "$host" 'any(.hosts[]; .ip == $ip)' "$f" >/dev/null || host_add "$host" >/dev/null
+  # Deduplicate on the value, never on the name. A host routinely holds more
+  # than one flag called flag.txt — one per user, one per path — and keying on
+  # the name silently replaced the first with the second, losing a capture that
+  # survived only in flags.local.md. Re-recording the same value stays a no-op.
+  local dupname
+  dupname=$(jq -r --arg ip "$host" --arg n "$name" --arg v "$val" '
+    [.hosts[] | select(.ip == $ip) | .flags[] | select(.name == $n and .value != $v)] | length' "$f")
   _edit --arg ip "$host" --arg n "$name" --arg v "$val" --arg now "$(_now)" '
     .hosts |= map(if .ip == $ip
-      then .flags |= (map(select(.name != $n)) + [{name: $n, value: $v, captured: $now}])
+      then .flags |= (map(select(.value != $v)) + [{name: $n, value: $v, captured: $now}])
       else . end)'
+  [ "${dupname:-0}" -gt 0 ] && \
+    echo "note: $host already had a different flag named '$name' — both kept. Consider distinct names."
   echo "| $lab/$host | $host | $name | $val | $(date -u '+%Y-%m-%d %H:%M') |" >> "$LAB_DIR/flags.local.md"
   # The value is deliberately absent from the ledger row: it is already in
   # campaign.json and flags.local.md, and the ledger is the document most likely
