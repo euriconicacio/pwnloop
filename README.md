@@ -48,6 +48,7 @@ you can watch happen.
 ## Contents
 
 - [Loop engineering](#loop-engineering)
+- [Track record](#track-record)
 - [Requirements](#requirements)
 - [Install](#install)
 - [VPN](#vpn)
@@ -131,6 +132,19 @@ time; the interesting property is that it can also take something out.
 That is the actual claim of this repository. Not that an agent can solve a lab
 machine — that is a demo. The claim is that the loop gets measurably better
 every time it runs, because the run is required to write back into it.
+
+## Track record
+
+| | run | published as |
+|---|---|---|
+| **Machines** | 14 rooted, Easy through Insane, Linux / Windows / AD / k8s | [`writeups/`](writeups/) — full chains, retired targets only |
+| **Pro Labs** | see [`labs.md`](labs.md) | results and methodology only — never a chain |
+
+Two different bars on purpose. A retired machine can be published in full, so its
+write-up is the artifact. A Pro Lab never retires, so the artifact is the
+platform's own completion certificate plus the numbers that describe the *loop* —
+hosts owned, sessions, wall-clock, and what the run changed in the methodology.
+Everything that would constitute a solution stays on the machine that ran it.
 
 ## Requirements
 

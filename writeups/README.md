@@ -4,6 +4,10 @@ Published versions of engagement write-ups, produced by `pwnloop` and then put
 through the redaction step described in
 [`skills/pwnloop/references/writeup.md`](../skills/pwnloop/references/writeup.md).
 
+Single machines only. Multi-host campaigns are indexed in
+[`labs.md`](../labs.md) and never carry a chain — a Pro Lab does not retire, so
+its solution never becomes publishable.
+
 | machine | platform | difficulty | OS | chain |
 |---------|----------|------------|----|-------|
 | [Cap](cap.md) | Hack The Box (retired) | Easy | Linux | IDOR → pcap → cleartext FTP credential → password reuse → `cap_setuid` on the system Python |
