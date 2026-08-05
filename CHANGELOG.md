@@ -20,6 +20,27 @@ Engagements are expected to change the methodology (see `memory/patterns.md`),
 so minor releases are the normal cadence. An entry that says only "ran a box"
 does not belong here — what belongs is what the run *changed*.
 
+## [1.8.1] — 2026-08-05
+
+### Fixed
+- **A campaign that was never named now says so.** Asking the operator for the
+  lab's name and renaming the directory is the last step of a campaign, and the
+  easiest one to skip — by then the flags are in and the run feels finished,
+  which is exactly what happened on the first one. A campaign still named after
+  its entry point while holding flags has almost certainly not closed out, so
+  the dashboard says so every time it prints.
+- **`references/pivoting.md` had tilted toward campaigns.** It is shared by both
+  skills, but the multi-host rewrite left campaign-only instructions in the base
+  path — including `pwnloop route add`, which *errors out* when no campaign is
+  current, and a staging directory that only exists under `campaigns/`. A single
+  machine following the reference would have hit both. Pivoting on one host —
+  reaching a service bound to `127.0.0.1`, or a second interface visible only
+  from inside — is the ordinary case again, and campaign registration is marked
+  as the addition it is.
+- The same file was still described in the skill's reference list by
+  its pre-1.7.0 contents. The file had been rewritten for multi-hop labs; the
+  one-line summary an agent reads to decide whether to open it had not.
+
 ## [1.8.0] — 2026-08-05
 
 The first campaign run to completion: a mini Pro Lab, three hosts, four flags.
