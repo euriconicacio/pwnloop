@@ -451,8 +451,16 @@ gitignored, or in the campaign directory — not in `references/`. When in doubt
 write the class in `references/` and keep the specifics local; the specifics are
 the half that ages worst anyway.
 
-The same applies to evidence: no lab hostnames, no domain names, no credential
-values, no flag values, no IPs from the lab's ranges in anything tracked.
+**Published metadata is not a solution.** A lab's own page states its name, entry
+point, how many machines it has and what they run, the flag names, and a blurb
+describing the scenario. Repeating any of that discloses nothing — it is the
+vendor's marketing copy — and `labs.md` names the lab for exactly this reason.
+
+What must never be published is what *enumeration* found: the AD domain, internal
+subnets and hostnames, account names, service versions and ports you discovered,
+credential and flag values, and above all the order of steps that turns one into
+the next. The line is between what the platform tells everyone and what the lab
+told you.
 
 ## Reporting to the operator
 

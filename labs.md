@@ -7,9 +7,14 @@ the loop, never **how** the network fell.
 That is not modesty, it is the rule. Pro Labs are never retired, so unlike a
 retired machine there is no future date at which a solution becomes publishable —
 sharing one is prohibited indefinitely. Everything that would constitute a
-solution (the chain, the hostnames, the credentials, the flags, the per-host
-ledgers and reports) stays in `campaigns/<lab>/`, which is gitignored and never
-leaves the machine that ran it.
+solution (the chain, the discovered hostnames and domains, the credentials, the
+flags, the per-host ledgers and reports) stays in `campaigns/<lab>/`, which is
+gitignored and never leaves the machine that ran it.
+
+The lab's *own page* is a different matter: its name, entry point, machine count
+and roster, flag names and scenario blurb are published by the platform itself.
+Naming a lab here, and saying how much of it fell, repeats what anyone can read
+before buying it.
 
 | lab | platform | hosts | flags | sessions | wall-clock | what it changed | verified |
 |-----|----------|-------|-------|----------|------------|-----------------|----------|
