@@ -24,6 +24,17 @@ the CHANGELOG entries the run produced. `verified` links the platform's own
 completion certificate or badge — the platform is the witness, which is the point:
 proof of completion is *issued by the target*, not asserted by the attacker.
 
+**`verified` takes a verification URL, never an image.** An image proves nothing
+— anyone can produce one — while a certificate URL or ID is checkable at the
+source by a reader who has no reason to trust this repository. A screenshot in
+`assets/` is for a slide deck, where the job is visual rather than evidentiary.
+
+**A partially completed lab has no certificate**, because the platform issues one
+only at 100%. That row still belongs here: it carries the honest hosts and flags
+figures and says `partial` in this column. A campaign that got most of the way is
+a real result and the numbers say exactly how far it got — writing anything that
+implies completion would make every other row in this table worth less.
+
 ## Why the numbers are the interesting artifact
 
 A write-up proves a machine fell to *someone*. It does not prove much about a
