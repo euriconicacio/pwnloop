@@ -1,38 +1,51 @@
 #!/usr/bin/env bash
 # pwnloop — thin wrapper around the Kali lab container.
 #
-#   pwnloop build              rebuild the image
-#   pwnloop up                 create/start the container
-#   pwnloop down               stop and remove the container
-#   pwnloop sh                 interactive shell inside the container
-#   pwnloop x <cmd...>         run a command inside the container (non-interactive)
-#   pwnloop vpn <file.ovpn>    start OpenVPN inside the container (backgrounded)
-#   pwnloop vpn-status         show tun0 / HTB reachability
-#   pwnloop vpn-stop           kill the VPN
-#   pwnloop status             image, container, VPN and tooling summary
-#   pwnloop flags              show locally captured flags
-#   pwnloop engagements        list past engagements and what each one was
-#   pwnloop banner             print the startup banner
-#   pwnloop ship [msg]         commit and push your learnings to your own remote
-#   pwnloop backup [--full]    encrypted archive of what git does not track
-#   pwnloop audit [base] [tip]  what a release must never carry — run before push
+# START A RUN — in Claude Code, from this directory
+#   /pwnloop <ip>              own one machine: recon to root, report, cleanup
+#   /pwnloop-lab <entry>       run a multi-host campaign from an IP or a CIDR
+#   /pwnloop-lab resume        continue the current campaign in a new session
 #
-# Multi-host campaigns (Pro Labs) — state store, see bin/lib/campaign.sh:
-#   pwnloop campaign <new|use|list|status|resume|sync|dir>
+# CONTAINER
+#   pwnloop build              rebuild the image
+#   pwnloop up | down          create/start, or stop and remove
+#   pwnloop sh                 interactive shell inside the container
+#   pwnloop x '<cmd>'          run one command inside the container
+#   pwnloop status             image, container, VPN and tooling summary
+#
+# VPN
+#   pwnloop vpn <file.ovpn>    start OpenVPN inside the container
+#   pwnloop vpn-status         tun0 address and the last log lines
+#   pwnloop vpn-stop           stop it
+#
+# CAMPAIGN STATE — the only writer of campaigns/<lab>/campaign.json
+#   pwnloop campaign <new|use|rename|list|status|resume|checkpoint|backfill>
 #   pwnloop host <add|set|list|show>
 #   pwnloop cred <add|list>
-#   pwnloop try <cred> <host> <service> <ok|fail|locked|error> | try next [n]
+#   pwnloop try <cred> <host> <svc> <ok|fail|locked>   ·   try next [n]
 #   pwnloop route <add|del|list|check>
 #   pwnloop flag <host> <name> <value>
 #   pwnloop lead <add|list|done|dead>
+#
+# RECORDS
+#   pwnloop flags              every flag captured locally
+#   pwnloop engagements        past single-machine runs
+#   pwnloop backup [--full]    encrypted archive of what git does not track
+#   pwnloop audit [base] [tip] what a release must never carry — before pushing
+#   pwnloop ship [msg]         push your learnings to your own remote
+#   pwnloop help | banner      this, or just the banner
 set -euo pipefail
 
 LAB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE="pwnloop:latest"
 NAME="pwnloop-box"
 
-# Print the header comment block only — stop at the first non-comment line.
+# Print the header comment block only — stop at the first non-comment line. The
+# comment is the single source: a help text written separately drifts from it.
 usage() { awk 'NR>1 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"; }
+
+# Banner plus the command surface — what to show someone who has never seen it.
+cmd_help() { cmd_banner; usage; echo; }
 
 # `docker inspect` also matches images, so always scope these to containers.
 running() { [ "$(docker container inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null || echo false)" = "true" ]; }
@@ -389,5 +402,6 @@ case "${1:-}" in
   route) shift; cmd_route "$@" ;;
   flag) shift; flag_add "$@" ;;
   lead) shift; cmd_lead "$@" ;;
-  *) usage ;;
+  help|-h|--help|"") cmd_help ;;
+  *) echo "unknown command: $1" >&2; echo >&2; usage >&2; exit 1 ;;
 esac
