@@ -49,6 +49,11 @@ pwnloop route add subnet=172.16.1.0/24 via=10.10.110.100 type=ligolo \
                   listener=11601 canary=172.16.1.5:445
 ```
 
+**The route goes in after the session is started**, never before. The interface
+exists from step 1 but carries nothing until a session is running, so a route
+added early blackholes the traffic and the subnet reads as filtered — a failure
+that looks like a hardened target rather than a mistake in your own setup.
+
 Drive the proxy console non-interactively by sending keys to the tmux session:
 
 ```bash

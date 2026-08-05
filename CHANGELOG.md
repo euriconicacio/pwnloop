@@ -20,9 +20,9 @@ Engagements are expected to change the methodology (see `memory/patterns.md`),
 so minor releases are the normal cadence. An entry that says only "ran a box"
 does not belong here — what belongs is what the run *changed*.
 
-## [Unreleased]
+## [1.7.0] — 2026-08-05
 
-### Campaign mode — multi-host labs (branch `v2-campaign`, unreleased)
+### Campaign mode — multi-host labs
 
 Everything below targets a *network* rather than a host: an HTB Pro Lab, an AD
 range, any engagement where most of the targets are unreachable until another one
@@ -108,6 +108,30 @@ The single-host loop is unchanged and becomes the inner loop.
   never installed. Rewritten for multi-hop labs: mechanism selection, double
   pivots, non-interactive proxy control, agent delivery, discovery from inside a
   host, and a tunnel-recovery order for after a lab reset.
+## [1.6.1] — 2026-08-05
+
+### Fixed
+- **`references/pivoting.md` documented a binary the image never installed.**
+  The ligolo-ng section told the operator to run `/opt/static/ligolo-proxy`, and
+  nothing in the Dockerfile ever put it there — so the one pivot mechanism that
+  gives a real TUN route (and therefore working `-sS`, UDP and raw tooling) was
+  unavailable exactly when a reference said to reach for it. The proxy and the
+  linux agent are now staged, resolved through the GitHub API rather than a
+  pinned URL so the image tracks upstream instead of 404ing on a later build.
+  A failed download degrades the image and is logged, as with every other staged
+  binary.
+- Added the ordering constraint that makes ligolo work: the route goes in
+  *after* the session is started in the proxy console. Added too early it
+  blackholes the traffic, and the subnet reads as filtered — a failure that
+  looks like a hardened target rather than a mistake.
+- **`campaigns/` is now ignored and refused by the hook**, before anything in
+  this version writes to it. A working copy can hold live engagement data while
+  checked out on a branch that predates the directory, and there an ignore rule
+  that ships *with* the feature ships too late: `git add -A` sweeps up private
+  keys, registry hives and flags. Found exactly that way. The content rules
+  (private-key material, flag-shaped strings) would have caught it at commit
+  time, which is the wrong layer to rely on — a path rule that only exists on
+  one branch is not a control.
 
 ## [1.6.0] — 2026-08-04
 
