@@ -1,0 +1,20 @@
+# Terms that must never appear in a commit — one extended regex per line.
+#
+# This file is gitignored, and that is the point: a list of what must not leak
+# would leak it. Copy it to .redact.local and fill it in as you go.
+#
+# Both `pwnloop audit` and the pre-commit hook refuse any staged or diffed line
+# matching these, case-insensitively. Add a term the moment a run discovers it,
+# not at release time — by release time you will not remember it.
+#
+# What belongs here:
+#   - lab and machine names you are working on
+#   - AD domains and hostnames discovered during a run
+#   - the lab's internal IP ranges
+#   - service-account names and any credential string worth guarding
+#
+# Examples (delete these; they match nothing real):
+#   somelab\.vl
+#   \bFILE0[0-9]\b
+#   172\.16\.40\.
+#   svc_[a-z_]+_t[0-9]

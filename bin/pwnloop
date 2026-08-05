@@ -15,6 +15,7 @@
 #   pwnloop banner             print the startup banner
 #   pwnloop ship [msg]         commit and push your learnings to your own remote
 #   pwnloop backup [--full]    encrypted archive of what git does not track
+#   pwnloop audit [base]       what a release must never carry — run before push
 #
 # Multi-host campaigns (Pro Labs) — state store, see bin/lib/campaign.sh:
 #   pwnloop campaign <new|use|list|status|resume|sync|dir>
@@ -170,6 +171,95 @@ cmd_backup() {
   echo "  tar xzf restored.tar.gz"
 }
 
+# What a release must never carry, checked before it is pushed rather than after.
+#
+# The pre-commit hook guards `git commit`. It does not run on `git merge`, which
+# is exactly how a release reaches main — so without this the last mile of every
+# release is unguarded. Run it before merging and before tagging.
+#
+# Hard failures are things that must never be public: engagement paths, flag
+# values, private keys, the attacker's VPN address, and whatever local terms you
+# listed in .redact.local (lab domains, hostnames, machine names — that file is
+# gitignored, because a list of what must not leak would itself leak it).
+#
+# Review items are softer: the words steer/hint/walkthrough legitimately appear
+# in the methodology *as rules about disclosure*, and illegitimately if a run
+# ever wrote down that it was helped. No pattern can tell those apart, so they
+# are printed for a human to read rather than blocked.
+cmd_audit() {
+  cd "$LAB_DIR" || exit 1
+  local base="${1:-main}"
+  git rev-parse --verify -q "$base" >/dev/null || { echo "no such ref: $base" >&2; exit 1; }
+
+  local hard=0 review=0 added files
+  files=$(git diff --name-only "$base"...HEAD)
+  added=$(git diff "$base"...HEAD -- . | grep '^+' | grep -v '^+++' || true)
+
+  echo "auditing $base...HEAD — $(printf '%s' "$files" | grep -c . || true) file(s)"
+  echo
+
+  _hard() { printf '\033[31mFAIL\033[0m  %s\n' "$1"; hard=$((hard + 1)); }
+  _rev()  { printf '\033[33mREVIEW\033[0m %s\n' "$1"; review=$((review + 1)); }
+
+  # 1. Paths that are never published, whether or not .gitignore is intact.
+  local p
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    case "$p" in
+      engagements/*|campaigns/*|vpn/*|flags.local.md|*.ovpn|memory/local.md|docker/packages.local.txt|.redact.local)
+        _hard "engagement data in the diff: $p" ;;
+    esac
+  done <<< "$files"
+
+  # Same, for anything already tracked — a file committed before the ignore rule
+  # existed stays tracked and stops showing up in diffs.
+  local tracked; tracked=$(git ls-files engagements campaigns vpn flags.local.md 2>/dev/null)
+  [ -n "$tracked" ] && while IFS= read -r p; do
+    [ -n "$p" ] && _hard "tracked engagement data: $p"
+  done <<< "$tracked"
+
+  # 2. Flag-shaped strings, minus the documented placeholders.
+  local hits
+  hits=$(printf '%s\n' "$added" | grep -oE '\b[0-9a-f]{32}\b' \
+         | grep -vE '^(0123456789abcdef0123456789abcdef|(.)\2{31})$' | sort -u || true)
+  [ -n "$hits" ] && while IFS= read -r p; do
+    [ -n "$p" ] && _hard "flag- or hash-shaped value: $p"
+  done <<< "$hits"
+
+  # 3. Key material and the attacker's own address.
+  printf '%s\n' "$added" | grep -q 'BEGIN [A-Z ]*PRIVATE KEY' && _hard "private key material"
+  hits=$(printf '%s\n' "$added" | grep -oE '\b10\.10\.1[45]\.[0-9]{1,3}\b' | grep -v '10.10.14.x' | sort -u || true)
+  [ -n "$hits" ] && while IFS= read -r p; do
+    [ -n "$p" ] && _hard "attacker VPN address: $p (generalise to 10.10.14.x)"
+  done <<< "$hits"
+
+  # 4. The operator's own blocklist.
+  if [ -f "$LAB_DIR/.redact.local" ]; then
+    local term
+    while IFS= read -r term; do
+      case "$term" in ''|'#'*) continue ;; esac
+      printf '%s\n' "$added" | grep -qiE "$term" && _hard "blocked term from .redact.local: $term"
+    done < "$LAB_DIR/.redact.local"
+  else
+    _rev "no .redact.local — lab domains and hostnames are not being checked"
+  fi
+
+  # 5. Language that may describe assistance rather than methodology.
+  hits=$(git diff "$base"...HEAD -- . | grep '^+' | grep -v '^+++' \
+         | grep -inE 'steer|hint|walkthrough|recognition|prior knowledge|you (said|told|asked|suggested)' || true)
+  if [ -n "$hits" ]; then
+    _rev "$(printf '%s\n' "$hits" | wc -l | tr -d ' ') line(s) mention steer/hint/recognition — confirm each states a rule rather than a disclosure:"
+    printf '%s\n' "$hits" | cut -c1-120 | sed 's/^/        /'
+  fi
+
+  echo
+  if [ "$hard" -gt 0 ]; then
+    echo "$hard hard failure(s). Do not push."
+    exit 1
+  fi
+  echo "no hard failures. $review item(s) to read before pushing."
+}
+
 # Commit and push what your engagements taught this clone, to your own remote.
 cmd_ship() {
   cd "$LAB_DIR" || exit 1
@@ -287,6 +377,7 @@ case "${1:-}" in
   banner) cmd_banner ;;
   ship) shift; cmd_ship "$@" ;;
   backup) shift; cmd_backup "$@" ;;
+  audit) shift; cmd_audit "$@" ;;
   campaign) shift; cmd_campaign "$@" ;;
   host) shift; cmd_host "$@" ;;
   cred) shift; cmd_cred "$@" ;;

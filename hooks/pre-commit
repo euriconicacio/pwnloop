@@ -34,12 +34,24 @@ if [ -n "$flags" ]; then
   note "if this is an example, use <32-hex-flag> instead"
 fi
 
-# 3. Private key material.
+# 3. The operator's own blocklist: lab domains, hostnames, machine names.
+#    .redact.local is gitignored — a list of what must not leak would leak it.
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null || echo .)
+if [ -f "$repo_root/.redact.local" ]; then
+  while IFS= read -r term; do
+    case "$term" in ''|'#'*) continue ;; esac
+    if git diff --cached -U0 -- $staged 2>/dev/null | grep '^+' | grep -qiE "$term"; then
+      note "blocked term from .redact.local in staged diff: $term"
+    fi
+  done < "$repo_root/.redact.local"
+fi
+
+# 4. Private key material.
 if git diff --cached -U0 -- $staged 2>/dev/null | grep -q '^+.*BEGIN [A-Z ]*PRIVATE KEY'; then
   note "private key material in staged diff"
 fi
 
-# 4. Attacker VPN address — an engagement property, not a machine property.
+# 5. Attacker VPN address — an engagement property, not a machine property.
 vpn=$(git diff --cached -U0 -- $staged 2>/dev/null \
   | grep '^+' | grep -oE '\b10\.10\.1[45]\.[0-9]{1,3}\b' | grep -v '10.10.14.x' | sort -u)
 if [ -n "$vpn" ]; then

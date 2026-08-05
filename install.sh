@@ -29,6 +29,10 @@ mkdir -p "$REPO/engagements" "$REPO/campaigns" "$REPO/vpn"
   cp "$REPO/docker/packages.local.txt.template" "$REPO/docker/packages.local.txt"
   echo "created       -> docker/packages.local.txt"
 }
+[ -f "$REPO/.redact.local" ] || {
+  cp "$REPO/.redact.local.template" "$REPO/.redact.local"
+  echo "created       -> .redact.local (terms that must never be committed)"
+}
 
 # Guard against committing engagement data — see hooks/pre-commit.
 if [ -d "$REPO/.git" ]; then
