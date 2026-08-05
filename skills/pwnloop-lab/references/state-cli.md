@@ -4,6 +4,16 @@ Every fact that outlives the current host goes through these commands. They are
 the only writer of `campaigns/<lab>/campaign.json`; `network.md` is re-rendered
 after each mutation, so the operator's `tail -f` is always current.
 
+Each mutation also appends one row to `CAMPAIGN.md`'s event table — host
+discovered, status change, credential, successful or locked authentication,
+pivot built, flag captured. The timeline is therefore a side effect of recording
+state, not a document anyone has to remember to maintain. What the CLI cannot
+write is *why*: append your reasoning to the same file in your own words when a
+decision was not obvious from the evidence.
+
+`host add` also creates `hosts/<ip>/{FINDINGS.md,scans,loot,www}`, so the
+per-host ledger exists from the moment the host does.
+
 All commands act on the *current* campaign (`campaigns/.current`, set by
 `campaign new` / `campaign use`). Override for one command with `PWNLOOP_LAB=x`.
 
@@ -17,6 +27,7 @@ pwnloop campaign list                         # all campaigns, owned/total
 pwnloop campaign status                       # the dashboard
 pwnloop campaign resume                       # checkpoint + dashboard + route check + next
 pwnloop campaign checkpoint "<handoff note>"  # what you were in the middle of
+pwnloop campaign backfill                     # repair: missing host ledgers, lost timeline
 pwnloop campaign dir                          # absolute path, for scripting
 ```
 

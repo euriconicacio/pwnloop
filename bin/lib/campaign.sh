@@ -37,6 +37,31 @@ _edit() {
   _sync_network_md
 }
 
+# Append one row to CAMPAIGN.md's event table.
+#
+# campaign.json holds what is *true*; network.md renders it. Neither holds
+# *history* — a snapshot cannot tell you that a credential came from host A
+# forty minutes before it opened host B, which is exactly what an operator
+# reads a ledger for. Every mutation logs a row here so the timeline exists
+# without anyone remembering to write it.
+_event() {
+  local host="$1" text="$2" when="${3:-$(date -u '+%H:%M')}" dir led n row
+  dir=$(_cdir 2>/dev/null) || return 0
+  led="$dir/CAMPAIGN.md"
+  [ -f "$led" ] || return 0
+  text="${text//|//}"                       # a pipe would break the table
+  n=$(grep -cE '^\| [0-9]+ \|' "$led" 2>/dev/null || true); n=${n:-0}
+  row=$(printf '| %d | %s | %s | %s | |' "$((n + 1))" "$when" "${host:--}" "$text")
+  # Rows go after the last table line, not at end of file — checkpoints and any
+  # prose the agent wrote live below the table and must not split it.
+  # The row goes through the environment, not -v: awk processes escape sequences
+  # in a -v assignment, which eats the backslash in DOMAIN\user — the single
+  # most common string in an AD campaign.
+  row="$row" awk '{ l[NR]=$0; if ($0 ~ /^\|/) last=NR }
+    END { for (i=1;i<=NR;i++) { print l[i]; if (i==last) print ENVIRON["row"] }
+          if (last==0) print ENVIRON["row"] }' "$led" > "$led.tmp" && mv "$led.tmp" "$led"
+}
+
 # k=v k=v … → {"k":"v",…}. Anything without an '=' is ignored.
 _kv() {
   local out='{}' pair k v
@@ -123,6 +148,47 @@ campaign_rename() {
   echo "campaigns/$old → campaigns/$new"
 }
 
+# Rebuild the ledger's event table from campaign.json's timestamps, for a
+# campaign whose state was recorded before the CLI logged events (or where the
+# table was lost). Refuses to run against a table that already has rows rather
+# than producing a duplicated timeline.
+campaign_backfill() {
+  local f led ip; f=$(_cjson); led="$(_cdir)/CAMPAIGN.md"
+
+  # Missing host directories and ledgers first — idempotent, so this half runs
+  # even when the event table is already populated.
+  local made=0
+  while read -r ip; do
+    [ -n "$ip" ] || continue
+    [ -f "$(_cdir)/hosts/$ip/FINDINGS.md" ] || made=$((made + 1))
+    _scaffold_host "$ip"
+  done < <(jq -r '.hosts[].ip' "$f")
+  [ "$made" -gt 0 ] && echo "$made host ledger(s) created under hosts/"
+
+  if grep -qE '^\| [0-9]+ \|' "$led" 2>/dev/null; then
+    echo "ledger already has event rows — leaving the timeline alone"
+    return 0
+  fi
+  local n=0 line t h e
+  while IFS='|' read -r t h e; do
+    [ -n "$t" ] || continue
+    _event "$h" "$e" "${t:11:5}"
+    n=$((n + 1))
+  done < <(jq -r '
+    [ (.hosts[]  | {t: .updated, h: .ip, e: ("host recorded — " + .status +
+                    (if (.access // "") != "" then " (" + .access + ")" else "" end))}),
+      (.creds[]  | {t: .added, h: "", e: ("credential " + .id + " — " +
+                    ((.domain // "") + (if (.domain // "") != "" then "\\" else "" end) + .user) +
+                    " (" + .type + ") from " + (.source // "?"))}),
+      (.routes[] | {t: .added, h: .via, e: ("pivot to " + .subnet + " via " + .type)}),
+      (.leads[]  | {t: .added, h: "", e: ("lead " + .id + ": " + .kind + " " + .target +
+                    (if (.note // "") != "" then " — " + .note else "" end))}),
+      (.hosts[] | .ip as $ip | .flags[]? | {t: .captured, h: $ip, e: ("**" + .name + " captured**")})
+    ] | sort_by(.t)[] | "\(.t)|\(.h)|\(.e)"' "$f")
+  echo "$n event(s) reconstructed into CAMPAIGN.md from campaign.json"
+  echo "note: only what the state file recorded. Anything never written to it is not recoverable."
+}
+
 campaign_list() {
   local d cur
   cur=$(cat "$CAMPAIGNS_DIR/.current" 2>/dev/null || echo "")
@@ -153,6 +219,9 @@ campaign_status() {
     "creds     \(.creds | length)   attempts \(.attempts | length) (\([.attempts[] | select(.result == "ok")] | length) ok, \([.attempts[] | select(.result == "locked")] | length) locked)",
     "routes    \(.routes | length) registered, \([.routes[] | select(.status == "up")] | length) up",
     "leads     \([.leads[] | select(.status == "open")] | length) open",
+    (if (.creds | length) > 0 and (.attempts | length) == 0 then
+      "\n!  the credential matrix is empty. Every spray, win or lose, needs\n!  pwnloop try <cred> <host> <service> <ok|fail|locked> — without it the\n!  next session re-tries everything and lockouts are invisible."
+     else empty end),
     "",
     (if (.hosts | length) > 0 then
       ("HOST             OS        STATUS     ACCESS                    FL  VIA",
@@ -223,9 +292,35 @@ campaign_resume() {
 
 # ── hosts ────────────────────────────────────────────────────────────────────
 
+# A host directory with a ledger, created the moment the host is known — a
+# per-host FINDINGS.md that has to be remembered into existence never is, and
+# what is left is a pile of raw scans nobody can read six hours later.
+_scaffold_host() {
+  local ip="$1" dir; dir="$(_cdir)/hosts/$ip"
+  [ -d "$dir" ] || mkdir -p "$dir"/{scans,loot,www}
+  [ -f "$dir/FINDINGS.md" ] || cat > "$dir/FINDINGS.md" <<EOF
+# $ip — $(_lab)
+Started: $(_now)
+
+| # | Time | Phase | Finding | Evidence | Status |
+|---|------|-------|---------|----------|--------|
+
+## Access
+- [ ] foothold — <user>@<host> via <vector>
+- [ ] flag
+- [ ] privesc — <vector>
+
+## Credentials found here
+| user | secret | source | works on |
+
+## Artifacts left on this host
+EOF
+}
+
 host_add() {
   local ip="${1:?usage: pwnloop host add <ip> [k=v …]}"; shift || true
-  local kv; kv=$(_kv "$@")
+  local kv new; kv=$(_kv "$@")
+  new=$(jq -r --arg ip "$ip" 'if any(.hosts[]; .ip == $ip) then "no" else "yes" end' "$(_cjson)")
   _edit --arg ip "$ip" --argjson kv "$kv" --arg now "$(_now)" '
     if any(.hosts[]; .ip == $ip)
     then .hosts |= map(if .ip == $ip then . + $kv + {updated: $now} else . end)
@@ -234,6 +329,8 @@ host_add() {
       via: "", ports: "", notes: "", flags: [], updated: $now
     } + $kv]
     end'
+  _scaffold_host "$ip"
+  [ "$new" = "yes" ] && _event "$ip" "host discovered$(jq -r '.os // "" | if . == "" then "" else " — " + . end' <<<"$kv")"
   echo "host $ip recorded"
 }
 
@@ -246,6 +343,10 @@ host_set() {
     || _die "no host $ip — 'pwnloop host add $ip' first"
   _edit --arg ip "$ip" --argjson kv "$kv" --arg now "$(_now)" \
     '.hosts |= map(if .ip == $ip then . + $kv + {updated: $now} else . end)'
+  # Only status and access changes are worth a ledger row; recording ports or a
+  # note every time would bury the timeline in noise.
+  local st ac; st=$(jq -r '.status // ""' <<<"$kv"); ac=$(jq -r '.access // ""' <<<"$kv")
+  [ -n "$st$ac" ] && _event "$ip" "${st:-update}${ac:+ — $ac}"
   echo "host $ip updated"
 }
 
@@ -285,6 +386,8 @@ cred_add() {
   _edit --arg id "$id" --argjson kv "$kv" --arg now "$(_now)" '
     .creds += [{id: $id, domain: "", user: "", secret: "", type: "password",
                 source: "", added: $now} + $kv]'
+  _event "$(jq -r '.host // ""' <<<"$kv")" \
+    "credential $id — $(jq -r '(.domain // "") + (if (.domain // "") != "" then "\\" else "" end) + (.user // "?")' <<<"$kv") ($(jq -r '.type // "password"' <<<"$kv")) from $(jq -r '.source // "?"' <<<"$kv")"
   echo "$id"
 }
 
@@ -308,6 +411,12 @@ try_record() {
   _edit --arg c "$cred" --arg h "$host" --arg s "$svc" --arg r "$res" --arg now "$(_now)" '
     .attempts |= (map(select(.cred != $c or .host != $h or .service != $s))
                   + [{cred: $c, host: $h, service: $s, result: $r, time: $now}])'
+  # A failure is as much a finding as a success — it is what stops the next
+  # session repeating it — but only wins and lockouts earn a ledger row.
+  case "$res" in
+    ok)     _event "$host" "$cred authenticates over $svc" ;;
+    locked) _event "$host" "**$cred LOCKED OUT** on $svc — stop spraying it" ;;
+  esac
   [ "$res" = "locked" ] && echo "WARNING: $cred locked out on $host — stop spraying it everywhere"
   echo "$cred → $host/$svc: $res"
 }
@@ -353,6 +462,8 @@ route_add() {
     .routes |= (map(select(.subnet != $sub)) + [{
       subnet: "", via: "", type: "", listener: "", canary: "", note: "",
       status: "unknown", added: $now} + $kv])'
+  _event "$(jq -r '.via // ""' <<<"$kv")" \
+    "pivot to $sub via $(jq -r '.type // "?"' <<<"$kv")"
   echo "route $sub registered"
 }
 
@@ -405,6 +516,10 @@ flag_add() {
       then .flags |= (map(select(.name != $n)) + [{name: $n, value: $v, captured: $now}])
       else . end)'
   echo "| $lab/$host | $host | $name | $val | $(date -u '+%Y-%m-%d %H:%M') |" >> "$LAB_DIR/flags.local.md"
+  # The value is deliberately absent from the ledger row: it is already in
+  # campaign.json and flags.local.md, and the ledger is the document most likely
+  # to be read over someone's shoulder.
+  _event "$host" "**$name captured**"
   echo "$name — $val"
 }
 
@@ -418,6 +533,7 @@ lead_add() {
   _edit --arg id "$id" --argjson kv "$kv" --arg now "$(_now)" '
     .leads += [{id: $id, kind: "", target: "", note: "", prio: "2",
                 status: "open", added: $now} + $kv]'
+  _event "" "lead $id: $(jq -r '(.kind // "?") + " " + (.target // "") + " — " + (.note // "")' <<<"$kv")"
   echo "$id"
 }
 
@@ -443,6 +559,7 @@ cmd_campaign() {
     status) shift; campaign_status "$@" ;;
     resume) shift; campaign_resume "$@" ;;
     checkpoint) shift; campaign_checkpoint "$@" ;;
+    backfill)   shift; campaign_backfill "$@" ;;
     sync)   _sync_network_md; echo "network.md updated" ;;
     dir)    _cdir; echo ;;
     *) _die "usage: pwnloop campaign <new|use|rename|list|status|resume|checkpoint|sync|dir>" ;;

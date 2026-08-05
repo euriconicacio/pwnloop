@@ -72,8 +72,27 @@ The single-host loop is unchanged and becomes the inner loop.
   (`docker/fetch-release.sh`) rather than pinned URLs that rot silently.
 - `/campaigns` bind mount; `pwnloop up` warns when an older container lacks it.
 
-**Fixed**
+**Fixed** — from the first live Pro Lab run
 
+- **The ledger's event table was never written.** Mutations updated
+  `campaign.json` and re-rendered `network.md`, so an operator reading both saw a
+  snapshot with no history and a ledger that was empty apart from checkpoints —
+  which reads, correctly, as "nothing is being persisted". Every mutation now
+  appends one row (host discovered, status change, credential, successful or
+  locked authentication, pivot, flag), so the timeline is a side effect of
+  recording state rather than a document someone must remember to maintain.
+  `campaign backfill` reconstructs it from the state file's timestamps for a
+  campaign that ran without it.
+- **Per-host ledgers were never created.** The skill required
+  `hosts/<ip>/FINDINGS.md` and nothing made one, so host detail existed only as
+  raw scan output. `host add` now scaffolds the directory and the ledger.
+- **An empty credential matrix was invisible.** A campaign can accumulate
+  credentials while recording no attempts, which silently disables the one
+  mechanism that prevents re-spraying and lockouts. `campaign status` now says so
+  loudly while both conditions hold.
+- **`awk -v` ate backslashes** in ledger rows, turning `NT AUTHORITY\SYSTEM` into
+  `NT AUTHORITYSYSTEM` — corruption aimed squarely at `DOMAIN\user`, the most
+  common string in an AD campaign. Rows now pass through the environment.
 - `references/pivoting.md` documented `/opt/static/ligolo-proxy`, which the image
   never installed. Rewritten for multi-hop labs: mechanism selection, double
   pivots, non-interactive proxy control, agent delivery, discovery from inside a

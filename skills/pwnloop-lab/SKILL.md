@@ -107,12 +107,42 @@ campaign directory created. Then go.
 ```
 campaigns/<lab>/
   campaign.json   canonical state — hosts, creds, attempts, routes, leads, flags
-  CAMPAIGN.md     the narrative ledger: decisions, in order, with evidence paths
+  CAMPAIGN.md     the ledger: an event row per discovery, plus your reasoning
   network.md      auto-rendered dashboard (the operator tails this)
   hosts/<ip>/     one directory per host — FINDINGS.md, scans/, loot/, www/
   loot/           campaign-wide: krb tickets, ntds dumps, cracked hashes
   routes/         tunnel configs, generated proxychains, PIDs
 ```
+
+### What lands where — and what only you can write
+
+Four layers, and knowing which is which is the difference between a campaign
+that can be handed over and one that only exists in your context:
+
+| layer | written by | holds |
+|---|---|---|
+| `campaign.json` | the CLI, exclusively | the current truth: hosts, credentials, the spray matrix, routes, leads, flags |
+| `network.md` | the CLI, on every write | a rendered snapshot of the above — **no history** |
+| `CAMPAIGN.md` | the CLI (one row per event) **and you** | the timeline, plus the *why* behind each decision |
+| `hosts/<ip>/` | you | per-host ledger, raw scan output, loot, staged payloads |
+
+The CLI now logs a ledger row for every host discovered, status change,
+credential, successful or locked authentication, pivot and flag — so the
+timeline builds itself and you never have to maintain it. Two things it cannot
+write, and they are the two that matter most six hours later:
+
+- **Reasoning.** Why a lead was ranked first, what a failure ruled out, the
+  theory you are working from. Append a line to `CAMPAIGN.md` whenever a decision
+  was not obvious from the evidence.
+- **Per-host detail.** `hosts/<ip>/FINDINGS.md` is created for you the moment a
+  host is added; filling it in with findings and their evidence files is the
+  same discipline as a single-host run.
+
+If you find yourself inventing a file to hold state — a `RESUME.md`, a notes
+file, a scratch list of hosts — stop: that state belongs in the CLI or the
+ledger, and anything outside them is invisible to `resume` and to the operator.
+Long handoffs go in `campaign checkpoint`, which accepts as much text as you
+need.
 
 **Work from the entry range alone — do not ask what the lab is called.** The
 directory is named from the CIDR (`campaigns/10-10-110-0-24/`) for exactly the
