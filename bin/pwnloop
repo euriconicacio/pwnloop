@@ -1,27 +1,51 @@
 #!/usr/bin/env bash
 # pwnloop — thin wrapper around the Kali lab container.
 #
+# START A RUN — in Claude Code, from this directory
+#   /pwnloop <ip>              own one machine: recon to root, report, cleanup
+#   /pwnloop-lab <entry>       run a multi-host campaign from an IP or a CIDR
+#   /pwnloop-lab resume        continue the current campaign in a new session
+#
+# CONTAINER
 #   pwnloop build              rebuild the image
-#   pwnloop up                 create/start the container
-#   pwnloop down               stop and remove the container
+#   pwnloop up | down          create/start, or stop and remove
 #   pwnloop sh                 interactive shell inside the container
-#   pwnloop x <cmd...>         run a command inside the container (non-interactive)
-#   pwnloop vpn <file.ovpn>    start OpenVPN inside the container (backgrounded)
-#   pwnloop vpn-status         show tun0 / HTB reachability
-#   pwnloop vpn-stop           kill the VPN
+#   pwnloop x '<cmd>'          run one command inside the container
 #   pwnloop status             image, container, VPN and tooling summary
-#   pwnloop flags              show locally captured flags
-#   pwnloop engagements        list past engagements and what each one was
-#   pwnloop banner             print the startup banner
-#   pwnloop ship [msg]         commit and push your learnings to your own remote
+#
+# VPN
+#   pwnloop vpn <file.ovpn>    start OpenVPN inside the container
+#   pwnloop vpn-status         tun0 address and the last log lines
+#   pwnloop vpn-stop           stop it
+#
+# CAMPAIGN STATE — the only writer of campaigns/<lab>/campaign.json
+#   pwnloop campaign <new|use|rename|list|status|resume|checkpoint|backfill>
+#   pwnloop host <add|set|list|show>
+#   pwnloop cred <add|list>
+#   pwnloop try <cred> <host> <svc> <ok|fail|locked>   ·   try next [n]
+#   pwnloop route <add|del|list|check>
+#   pwnloop flag <host> <name> <value>
+#   pwnloop lead <add|list|done|dead>
+#
+# RECORDS
+#   pwnloop flags              every flag captured locally
+#   pwnloop engagements        past single-machine runs
+#   pwnloop backup [--full]    encrypted archive of what git does not track
+#   pwnloop audit [base] [tip] what a release must never carry — before pushing
+#   pwnloop ship [msg]         push your learnings to your own remote
+#   pwnloop help | banner      this, or just the banner
 set -euo pipefail
 
 LAB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE="pwnloop:latest"
 NAME="pwnloop-box"
 
-# Print the header comment block only — stop at the first non-comment line.
+# Print the header comment block only — stop at the first non-comment line. The
+# comment is the single source: a help text written separately drifts from it.
 usage() { awk 'NR>1 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"; }
+
+# Banner plus the command surface — what to show someone who has never seen it.
+cmd_help() { cmd_banner; usage; echo; }
 
 # `docker inspect` also matches images, so always scope these to containers.
 running() { [ "$(docker container inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null || echo false)" = "true" ]; }
@@ -34,14 +58,22 @@ cmd_build() {
 cmd_up() {
   if exists; then
     running || docker start "$NAME" >/dev/null
+    # A container created before campaign mode has no /campaigns mount, and a
+    # bind mount cannot be added to a live container.
+    docker container inspect -f '{{range .Mounts}}{{.Destination}} {{end}}' "$NAME" \
+      | grep -q /campaigns || {
+      echo "note: this container predates campaign mode and has no /campaigns mount." >&2
+      echo "      run 'pwnloop down && pwnloop up' before starting a campaign." >&2
+    }
   else
-    mkdir -p "$LAB_DIR/engagements" "$LAB_DIR/vpn"
+    mkdir -p "$LAB_DIR/engagements" "$LAB_DIR/campaigns" "$LAB_DIR/vpn"
     docker run -d --name "$NAME" \
       --platform linux/arm64 \
       --cap-add=NET_ADMIN \
       --device /dev/net/tun \
       --dns 1.1.1.1 \
       -v "$LAB_DIR/engagements:/engagements" \
+      -v "$LAB_DIR/campaigns:/campaigns" \
       -v "$LAB_DIR/vpn:/vpn:ro" \
       "$IMAGE" >/dev/null
   fi
@@ -80,6 +112,171 @@ cmd_status() {
   running && cmd_x 'for t in nmap ffuf feroxbuster nxc netexec impacket-secretsdump evil-winrm sqlmap hydra john searchsploit openvpn; do printf "%-22s %s\n" "$t" "$(command -v $t || echo -)"; done; echo; ip -4 addr show tun0 2>/dev/null | grep inet || echo "tun0: down"'
 }
 
+# Encrypted backup of everything this clone knows that git does not.
+#
+# The intuition is that none of this needs backing up, and for most of the bytes
+# that is right: an engagement's durable half is its write-up, which is already
+# published in the repository. Two things break that rule and they are the two
+# with no replication path at all — `memory/local.md`, which is the entire
+# second loop, and `campaigns/`, which by design produces no publishable
+# artifact and is therefore its own only record.
+#
+# Encrypted because the same archive holds flags, credentials and loot, and
+# unencrypted backups of those end up on cloud drives. `vpn/` is never included:
+# it is re-downloadable from the platform and is the one thing whose leak costs
+# something.
+cmd_backup() {
+  local full=0
+  [ "${1:-}" = "--full" ] && { full=1; shift; }
+  local dest="${1:-$HOME/pwnloop-backups}"
+
+  [ -t 0 ] || { echo "run this from a terminal — it prompts for a passphrase" >&2; exit 1; }
+
+  # An archive of flags and loot inside the repository is one `git add -A` away
+  # from being committed, whatever the hook says.
+  case "$(cd "$dest" 2>/dev/null && pwd || echo "$dest")" in
+    "$LAB_DIR"|"$LAB_DIR"/*) echo "refusing to write the backup inside the repository" >&2; exit 1 ;;
+  esac
+
+  # LibreSSL (/usr/bin/openssl on macOS) has no -pbkdf2, which would leave the
+  # passphrase stretched by a single MD5 pass.
+  local ssl; ssl=$(command -v openssl) || { echo "openssl not found" >&2; exit 1; }
+  "$ssl" enc -help 2>&1 | grep -q -- -pbkdf2 || {
+    echo "this openssl has no -pbkdf2 (LibreSSL?). Install one: brew install openssl" >&2; exit 1; }
+
+  mkdir -p "$dest"
+  local stamp; stamp=$(date -u '+%Y-%m-%d-%H%M')
+  local out="$dest/pwnloop-$stamp.tar.gz"
+
+  local items=() skipped=()
+  for f in memory/local.md flags.local.md docker/packages.local.txt campaigns; do
+    [ -e "$LAB_DIR/$f" ] && items+=("$f") || skipped+=("$f")
+  done
+  if [ "$full" -eq 1 ]; then
+    [ -d "$LAB_DIR/engagements" ] && items+=("engagements")
+  fi
+  [ ${#items[@]} -gt 0 ] || { echo "nothing to back up" >&2; exit 1; }
+
+  echo "archiving: ${items[*]}"
+  tar czf "$out" -C "$LAB_DIR" \
+      --exclude='vpn' --exclude='*.ovpn' --exclude='.DS_Store' "${items[@]}" || {
+    rm -f "$out"; echo "tar failed" >&2; exit 1; }
+
+  # openssl enc gives confidentiality but no integrity, so the plaintext digest
+  # is kept beside the archive: it is what tells you a restore is intact.
+  shasum -a 256 "$out" | awk '{print $1}' > "$out.sha256"
+
+  echo "encrypting (passphrase is asked twice, and cannot be recovered):"
+  "$ssl" enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -in "$out" -out "$out.enc" || {
+    rm -f "$out" "$out.enc" "$out.sha256"; echo "encryption failed — nothing written" >&2; exit 1; }
+  rm -f "$out"
+
+  echo
+  echo "wrote $out.enc ($(du -h "$out.enc" | cut -f1))"
+  echo "     $(basename "$out").sha256  — digest of the archive inside"
+  [ ${#skipped[@]} -gt 0 ] && echo "not present, so not included: ${skipped[*]}"
+  [ "$full" -eq 1 ] || echo "engagements/ excluded (write-ups already cover them) — use --full to include"
+  echo "vpn/ excluded, always."
+  echo
+  echo "restore:"
+  echo "  openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in $(basename "$out").enc -out restored.tar.gz"
+  echo "  shasum -a 256 -c <(echo \"\$(cat $(basename "$out").sha256)  restored.tar.gz\")"
+  echo "  tar xzf restored.tar.gz"
+}
+
+# What a release must never carry, checked before it is pushed rather than after.
+#
+# The pre-commit hook guards `git commit`. It does not run on `git merge`, which
+# is exactly how a release reaches main — so without this the last mile of every
+# release is unguarded. Run it before merging and before tagging.
+#
+# Hard failures are things that must never be public: engagement paths, flag
+# values, private keys, the attacker's VPN address, and whatever local terms you
+# listed in .redact.local (lab domains, hostnames, machine names — that file is
+# gitignored, because a list of what must not leak would itself leak it).
+#
+# Review items are softer: the words steer/hint/walkthrough legitimately appear
+# in the methodology *as rules about disclosure*, and illegitimately if a run
+# ever wrote down that it was helped. No pattern can tell those apart, so they
+# are printed for a human to read rather than blocked.
+cmd_audit() {
+  cd "$LAB_DIR" || exit 1
+  # A second ref lets you audit a branch you are not standing on — which is the
+  # normal case, since the release being audited is the one about to be merged.
+  local base="${1:-main}" tip="${2:-HEAD}"
+  for r in "$base" "$tip"; do
+    git rev-parse --verify -q "$r" >/dev/null || { echo "no such ref: $r" >&2; exit 1; }
+  done
+
+  local hard=0 review=0 added files
+  files=$(git diff --name-only "$base...$tip")
+  added=$(git diff "$base...$tip" -- . | grep '^+' | grep -v '^+++' || true)
+
+  echo "auditing $base...$tip — $(printf '%s' "$files" | grep -c . || true) file(s)"
+  echo
+
+  _hard() { printf '\033[31mFAIL\033[0m  %s\n' "$1"; hard=$((hard + 1)); }
+  _rev()  { printf '\033[33mREVIEW\033[0m %s\n' "$1"; review=$((review + 1)); }
+
+  # 1. Paths that are never published, whether or not .gitignore is intact.
+  local p
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    case "$p" in
+      engagements/*|campaigns/*|vpn/*|flags.local.md|*.ovpn|memory/local.md|docker/packages.local.txt|.redact.local)
+        _hard "engagement data in the diff: $p" ;;
+    esac
+  done <<< "$files"
+
+  # Same, for anything already tracked — a file committed before the ignore rule
+  # existed stays tracked and stops showing up in diffs.
+  local tracked; tracked=$(git ls-files engagements campaigns vpn flags.local.md 2>/dev/null)
+  [ -n "$tracked" ] && while IFS= read -r p; do
+    [ -n "$p" ] && _hard "tracked engagement data: $p"
+  done <<< "$tracked"
+
+  # 2. Flag-shaped strings, minus the documented placeholders.
+  local hits
+  hits=$(printf '%s\n' "$added" | grep -oE '\b[0-9a-f]{32}\b' \
+         | grep -vE '^(0123456789abcdef0123456789abcdef|(.)\2{31})$' | sort -u || true)
+  [ -n "$hits" ] && while IFS= read -r p; do
+    [ -n "$p" ] && _hard "flag- or hash-shaped value: $p"
+  done <<< "$hits"
+
+  # 3. Key material and the attacker's own address.
+  printf '%s\n' "$added" | grep -q 'BEGIN [A-Z ]*PRIVATE KEY' && _hard "private key material"
+  hits=$(printf '%s\n' "$added" | grep -oE '\b10\.10\.1[45]\.[0-9]{1,3}\b' | grep -v '10.10.14.x' | sort -u || true)
+  [ -n "$hits" ] && while IFS= read -r p; do
+    [ -n "$p" ] && _hard "attacker VPN address: $p (generalise to 10.10.14.x)"
+  done <<< "$hits"
+
+  # 4. The operator's own blocklist.
+  if [ -f "$LAB_DIR/.redact.local" ]; then
+    local term
+    while IFS= read -r term; do
+      case "$term" in ''|'#'*) continue ;; esac
+      printf '%s\n' "$added" | grep -qiE "$term" && _hard "blocked term from .redact.local: $term"
+    done < "$LAB_DIR/.redact.local"
+  else
+    _rev "no .redact.local — lab domains and hostnames are not being checked"
+  fi
+
+  # 5. Language that may describe assistance rather than methodology.
+  hits=$(git diff "$base...$tip" -- . | grep '^+' | grep -v '^+++' \
+         | grep -inE 'steer|hint|walkthrough|recognition|prior knowledge|you (said|told|asked|suggested)' || true)
+  if [ -n "$hits" ]; then
+    _rev "$(printf '%s\n' "$hits" | wc -l | tr -d ' ') line(s) mention steer/hint/recognition — confirm each states a rule rather than a disclosure:"
+    printf '%s\n' "$hits" | cut -c1-120 | sed 's/^/        /'
+  fi
+
+  echo
+  if [ "$hard" -gt 0 ]; then
+    echo "$hard hard failure(s). Do not push."
+    exit 1
+  fi
+  echo "no hard failures. $review item(s) to read before pushing."
+}
+
 # Commit and push what your engagements taught this clone, to your own remote.
 cmd_ship() {
   cd "$LAB_DIR" || exit 1
@@ -99,7 +296,7 @@ cmd_ship() {
   echo "$staged" | sed 's/^/  /'
 
   # Refuse engagement data outright, whatever the hook is doing.
-  if echo "$staged" | grep -qE '^engagements/|^vpn/|flags\.local\.md|\.ovpn$'; then
+  if echo "$staged" | grep -qE '^engagements/|^campaigns/|^vpn/|flags\.local\.md|\.ovpn$'; then
     echo >&2; echo "refusing: engagement data is staged. Unstage it and check .gitignore." >&2
     git reset -q; exit 1
   fi
@@ -177,6 +374,11 @@ cmd_flags() {
   else echo "no flags captured yet ($LAB_DIR/flags.local.md)"; fi
 }
 
+# Campaign state lives in its own file: it is a third of this script's size and
+# only a multi-host engagement ever touches it.
+# shellcheck source=lib/campaign.sh
+[ -f "$LAB_DIR/bin/lib/campaign.sh" ] && . "$LAB_DIR/bin/lib/campaign.sh"
+
 case "${1:-}" in
   build) shift; cmd_build "$@" ;;
   up) shift; cmd_up "$@" ;;
@@ -191,5 +393,15 @@ case "${1:-}" in
   engagements) cmd_engagements ;;
   banner) cmd_banner ;;
   ship) shift; cmd_ship "$@" ;;
-  *) usage ;;
+  backup) shift; cmd_backup "$@" ;;
+  audit) shift; cmd_audit "$@" ;;
+  campaign) shift; cmd_campaign "$@" ;;
+  host) shift; cmd_host "$@" ;;
+  cred) shift; cmd_cred "$@" ;;
+  try) shift; cmd_try "$@" ;;
+  route) shift; cmd_route "$@" ;;
+  flag) shift; flag_add "$@" ;;
+  lead) shift; cmd_lead "$@" ;;
+  help|-h|--help|"") cmd_help ;;
+  *) echo "unknown command: $1" >&2; echo >&2; usage >&2; exit 1 ;;
 esac

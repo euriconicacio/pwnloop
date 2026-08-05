@@ -28,22 +28,48 @@ RUN mkdir -p /opt/static && cd /opt/static && \
       https://github.com/DominicBreuker/pspy/releases/latest/download/pspy32 \
       https://github.com/jpillora/chisel/releases/download/v1.10.1/chisel_1.10.1_linux_amd64.gz \
       https://github.com/jpillora/chisel/releases/download/v1.10.1/chisel_1.10.1_linux_arm64.gz \
+      https://github.com/jpillora/chisel/releases/download/v1.10.1/chisel_1.10.1_windows_amd64.gz \
+      https://raw.githubusercontent.com/andrew-d/static-binaries/master/binaries/linux/x86_64/socat \
     ; do curl -fsSL -O "$u" || echo "download failed: $u" >> /opt/skipped-downloads.txt ; done && \
     gunzip -f chisel_*.gz 2>/dev/null || true ; chmod +x /opt/static/* 2>/dev/null || true
 
-# ligolo-ng, which references/pivoting.md has always documented and this image
-# never installed — the reference told the operator to run a binary that was not
-# there. Resolved through the GitHub API rather than a pinned URL, so the image
-# tracks upstream instead of 404ing the next time it is built; a failed download
-# degrades the image rather than breaking the build.
+# Pivoting and Windows post-exploitation. A multi-host lab needs a tunnel agent
+# for the target's platform, not just a proxy for ours — the single most common
+# way a campaign stalls is landing on a Windows host with nothing to run on it.
 COPY fetch-release.sh /usr/local/bin/fetch-release
 RUN chmod +x /usr/local/bin/fetch-release && \
-    fetch-release nicocha30/ligolo-ng 'proxy.*linux_arm64' /opt/static 'ligolo-ng|proxy' ; \
-    fetch-release nicocha30/ligolo-ng 'agent.*linux_amd64' /opt/static 'ligolo-ng|agent' ; \
-    cd /opt/static && rm -f ./*.tar.gz ./*.tgz ./*.zip ; \
+    mkdir -p /opt/static/windows && \
+    # ligolo-ng: TUN-based pivot. The proxy runs here, agents run on targets.
+    fetch-release nicocha30/ligolo-ng 'proxy.*linux_arm64'   /opt/static         'ligolo-ng|proxy' ; \
+    fetch-release nicocha30/ligolo-ng 'agent.*linux_amd64'   /opt/static         'ligolo-ng|agent' ; \
+    fetch-release nicocha30/ligolo-ng 'agent.*windows_amd64' /opt/static/windows 'agent.*\.exe' ; \
+    # Windows AD toolkit — precompiled, so no build chain is needed mid-run.
+    fetch-release SpecterOps/SharpHound  'SharpHound.*\.zip$'    /opt/static/windows 'SharpHound\.exe' ; \
+    fetch-release gentilkiwi/mimikatz    'mimikatz_trunk\.zip$'  /opt/static/windows 'x64/mimikatz\.exe' ; \
+    fetch-release antonioCoco/RunasCs    'RunasCs\.zip$'         /opt/static/windows 'RunasCs\.exe' ; \
+    fetch-release BeichenDream/GodPotato 'GodPotato-NET4\.exe$'  /opt/static/windows ; \
+    for u in \
+      https://github.com/Flangvik/SharpCollection/raw/master/NetFramework_4.7_Any/Rubeus.exe \
+      https://github.com/Flangvik/SharpCollection/raw/master/NetFramework_4.7_Any/Certify.exe \
+      https://github.com/Flangvik/SharpCollection/raw/master/NetFramework_4.7_Any/Seatbelt.exe \
+      https://github.com/Flangvik/SharpCollection/raw/master/NetFramework_4.7_Any/SharpUp.exe \
+      https://raw.githubusercontent.com/PowerShellMafia/PowerSploit/dev/Recon/PowerView.ps1 \
+      https://raw.githubusercontent.com/PowerShellMafia/PowerSploit/dev/Privesc/PowerUp.ps1 \
+    ; do curl -fsSL -o "/opt/static/windows/$(basename "$u")" "$u" || \
+         echo "download failed: $u" >> /opt/skipped-downloads.txt ; done ; \
+    chmod +x /opt/static/windows/* 2>/dev/null || true
+
+# Normalise the names the methodology refers to. ligolo's archives unpack to
+# bare 'proxy' and 'agent', which are ambiguous next to chisel's agent and
+# unguessable from a reference file — so pin the names references/pivoting.md
+# actually documents, and drop the archives that survived extraction.
+RUN cd /opt/static && \
+    rm -f ./*.tar.gz ./*.tgz ./*.zip windows/*.tar.gz windows/*.zip ; \
     [ -f proxy ] && mv -f proxy ligolo-proxy ; \
     [ -f agent ] && mv -f agent ligolo-agent ; \
-    chmod +x /opt/static/* 2>/dev/null ; true
+    [ -f windows/agent.exe ] && mv -f windows/agent.exe windows/ligolo-agent.exe ; \
+    [ -f chisel_1.10.1_windows_amd64 ] && mv -f chisel_1.10.1_windows_amd64 windows/chisel.exe ; \
+    chmod +x /opt/static/* /opt/static/windows/* 2>/dev/null ; true
 
 # Kali ships rockyou compressed; every playbook expects the plain file.
 RUN gunzip -k /usr/share/wordlists/rockyou.txt.gz 2>/dev/null || true
@@ -52,6 +78,7 @@ RUN gunzip -k /usr/share/wordlists/rockyou.txt.gz 2>/dev/null || true
 ENV PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin
 RUN pipx install certipy-ad     || echo "certipy-ad"      >> /opt/skipped-packages.txt ; \
     pipx install bloodhound     || echo "bloodhound-python" >> /opt/skipped-packages.txt ; \
+    pipx install bloodhound-ce  || echo "bloodhound-ce"   >> /opt/skipped-packages.txt ; \
     pipx install git-dumper     || echo "git-dumper"      >> /opt/skipped-packages.txt ; \
     pipx install ldapdomaindump || echo "ldapdomaindump"  >> /opt/skipped-packages.txt
 
@@ -63,7 +90,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends golang-go && \
       echo "kerbrute" >> /opt/skipped-packages.txt ; \
     rm -rf /root/.cache/go-build /var/lib/apt/lists/*
 
-RUN mkdir -p /engagements /vpn && \
+RUN mkdir -p /engagements /campaigns /vpn && \
     ln -sf /usr/share/seclists /opt/seclists 2>/dev/null || true
 
 # git refuses to commit without an identity, which blocks plumbing-based

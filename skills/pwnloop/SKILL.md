@@ -33,6 +33,11 @@ slash command or by invoking this skill directly — both must behave the same:
   >5 min (may need a platform reset), a real scope question, or three full
   enumeration loops with no new leads.
 
+**If the target is a network rather than a host** — a CIDR, a named Pro Lab, or
+an engagement already under `campaigns/` — this is the wrong skill on its own.
+Use `pwnloop-lab`, which keeps the network state across sessions and calls
+this loop once per host.
+
 ## Scope contract (check once, then stop asking)
 
 Valid targets: RFC1918 / CGNAT addresses reachable over the HTB VPN (`10.10.10.x`,

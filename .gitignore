@@ -11,6 +11,10 @@ vpn/
 # accident; `pwnloop ship` force-adds them when you choose to push to your fork.
 memory/local.md
 docker/packages.local.txt
+
+# Your list of terms that must never be committed — lab domains, hostnames,
+# machine names. Ignored because a list of what must not leak would leak it.
+.redact.local
 !vpn/.gitkeep
 *.ovpn
 *.log

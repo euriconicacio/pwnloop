@@ -20,8 +20,94 @@ Engagements are expected to change the methodology (see `memory/patterns.md`),
 so minor releases are the normal cadence. An entry that says only "ran a box"
 does not belong here — what belongs is what the run *changed*.
 
-## [Unreleased]
+## [1.7.0] — 2026-08-05
 
+### Campaign mode — multi-host labs
+
+Everything below targets a *network* rather than a host: an HTB Pro Lab, an AD
+range, any engagement where most of the targets are unreachable until another one
+is owned and the work outlives a single context window many times over.
+
+The single-host loop is unchanged and becomes the inner loop.
+
+**Added**
+
+- `skills/pwnloop-lab/` — the outer loop: frontier-based target selection,
+  the resume protocol, credential handling at lab scale, per-host delegation, and
+  the Pro Lab publication rule (no publishable write-up — Pro Labs never retire).
+  Skill and command share a name, as `pwnloop` and `/pwnloop` do; two names for
+  one capability read as two capabilities.
+- `commands/pwnloop-lab.md` — `/pwnloop-lab <entry-ip|entry-cidr>` and
+  `/pwnloop-lab resume`. **The lab's name is not an argument**: the directory is
+  derived from the entry point (`campaigns/10-10-110-5/`), `campaigns/.current`
+  is the handle, and `campaign rename` runs at the end — the same trade the
+  single-host loop makes with machine names, for the same recall reason.
+- Single-host entry points, the common Pro Lab shape: phase 0 is an ordinary
+  single-host engagement, the campaign begins at the first shell (interfaces,
+  routes, trusts before local escalation), and resume verifies the entry host
+  before any route, since it is the first hop of every chain.
+- `pwnloop backup [--full]` — an encrypted archive of everything git does not
+  track. The instinct that none of it needs backing up holds for most of the
+  bytes, since an engagement's durable half is its published write-up, and fails
+  for exactly the two things with no replication path: `memory/local.md`, which
+  is the whole second loop, and `campaigns/`, which by design produces no
+  publishable artifact and is therefore its own only record. `vpn/` is never
+  included — re-downloadable, and the one thing whose leak costs something.
+  AES-256 with PBKDF2, plus a plaintext digest beside the archive because
+  `openssl enc` gives confidentiality and no integrity. Refuses to write inside
+  the repository, where an archive of flags and loot is one `git add -A` from
+  being committed.
+- `campaign checkpoint` — a session is hours, a lab is longer. The state file
+  records what is true; the checkpoint records what you were in the middle of and
+  what you would have done next, which is the part that cannot be inferred.
+  `resume` prints it first.
+- `references/delegation.md` — the per-host subagent brief and the structured
+  receipt it must return, plus what is never delegated (scope calls, cleanup,
+  methodology write-back). Context, not time, is the scarce resource on a
+  twenty-host lab; free-form briefs produce summaries that cannot be merged.
+- `bin/lib/campaign.sh` — the state store. `campaign`, `host`, `cred`, `try`,
+  `route`, `flag` and `lead` subcommands write `campaigns/<lab>/campaign.json`
+  and re-render `network.md` after every mutation. The CLI is the only writer:
+  on a twenty-host lab, free-form state edits drift within hours.
+- Credential matrix — every spray result recorded, `try next` suggests only
+  untried (credential, host, service) triples, and a `locked` result removes that
+  credential from all future suggestions. Lockout is the one irreversible
+  mistake available on a hardened lab.
+- Route registry with canaries — `route check` proves a tunnel still carries
+  traffic instead of trusting the state file. A dead tunnel is indistinguishable
+  from a hardened target until you test it.
+- Container: ligolo-ng proxy and agents (linux + windows), chisel for windows,
+  static socat, SharpHound, Rubeus, Certify, Seatbelt, SharpUp, mimikatz,
+  RunasCs, GodPotato, PowerView/PowerUp, `mitm6`, `sshuttle`, `bloodhound-ce`.
+  Release assets are resolved through the GitHub API at build time
+  (`docker/fetch-release.sh`) rather than pinned URLs that rot silently.
+- `/campaigns` bind mount; `pwnloop up` warns when an older container lacks it.
+
+**Fixed** — from the first live Pro Lab run
+
+- **The ledger's event table was never written.** Mutations updated
+  `campaign.json` and re-rendered `network.md`, so an operator reading both saw a
+  snapshot with no history and a ledger that was empty apart from checkpoints —
+  which reads, correctly, as "nothing is being persisted". Every mutation now
+  appends one row (host discovered, status change, credential, successful or
+  locked authentication, pivot, flag), so the timeline is a side effect of
+  recording state rather than a document someone must remember to maintain.
+  `campaign backfill` reconstructs it from the state file's timestamps for a
+  campaign that ran without it.
+- **Per-host ledgers were never created.** The skill required
+  `hosts/<ip>/FINDINGS.md` and nothing made one, so host detail existed only as
+  raw scan output. `host add` now scaffolds the directory and the ledger.
+- **An empty credential matrix was invisible.** A campaign can accumulate
+  credentials while recording no attempts, which silently disables the one
+  mechanism that prevents re-spraying and lockouts. `campaign status` now says so
+  loudly while both conditions hold.
+- **`awk -v` ate backslashes** in ledger rows, turning `NT AUTHORITY\SYSTEM` into
+  `NT AUTHORITYSYSTEM` — corruption aimed squarely at `DOMAIN\user`, the most
+  common string in an AD campaign. Rows now pass through the environment.
+- `references/pivoting.md` documented `/opt/static/ligolo-proxy`, which the image
+  never installed. Rewritten for multi-hop labs: mechanism selection, double
+  pivots, non-interactive proxy control, agent delivery, discovery from inside a
+  host, and a tunnel-recovery order for after a lab reset.
 ## [1.6.1] — 2026-08-05
 
 ### Fixed

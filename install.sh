@@ -8,12 +8,16 @@ CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
 mkdir -p "$CLAUDE_DIR/skills" "$CLAUDE_DIR/commands"
 
-ln -sfn "$REPO/skills/pwnloop" "$CLAUDE_DIR/skills/pwnloop"
-ln -sfn "$REPO/commands/pwnloop.md"    "$CLAUDE_DIR/commands/pwnloop.md"
+ln -sfn "$REPO/skills/pwnloop"          "$CLAUDE_DIR/skills/pwnloop"
+ln -sfn "$REPO/skills/pwnloop-lab"      "$CLAUDE_DIR/skills/pwnloop-lab"
+ln -sfn "$REPO/commands/pwnloop.md"     "$CLAUDE_DIR/commands/pwnloop.md"
+ln -sfn "$REPO/commands/pwnloop-lab.md" "$CLAUDE_DIR/commands/pwnloop-lab.md"
 echo "linked skill  -> $CLAUDE_DIR/skills/pwnloop"
+echo "linked skill  -> $CLAUDE_DIR/skills/pwnloop-lab"
 echo "linked command-> $CLAUDE_DIR/commands/pwnloop.md"
+echo "linked command-> $CLAUDE_DIR/commands/pwnloop-lab.md"
 
-mkdir -p "$REPO/engagements" "$REPO/vpn"
+mkdir -p "$REPO/engagements" "$REPO/campaigns" "$REPO/vpn"
 
 # Your own learnings live in files upstream never touches, so `git pull` cannot
 # conflict with what your engagements have written.
@@ -24,6 +28,10 @@ mkdir -p "$REPO/engagements" "$REPO/vpn"
 [ -f "$REPO/docker/packages.local.txt" ] || {
   cp "$REPO/docker/packages.local.txt.template" "$REPO/docker/packages.local.txt"
   echo "created       -> docker/packages.local.txt"
+}
+[ -f "$REPO/.redact.local" ] || {
+  cp "$REPO/.redact.local.template" "$REPO/.redact.local"
+  echo "created       -> .redact.local (terms that must never be committed)"
 }
 
 # Guard against committing engagement data — see hooks/pre-commit.
