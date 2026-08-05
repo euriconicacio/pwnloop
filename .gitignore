@@ -1,5 +1,9 @@
 # Engagement data, flags and VPN credentials never belong in the repository.
+# `campaigns/` is listed here before anything writes to it on purpose: a working
+# copy can hold a live campaign while checked out on a branch that predates the
+# feature, and an ignore rule that arrives with the feature arrives too late.
 engagements/
+campaigns/
 flags.local.md
 vpn/
 

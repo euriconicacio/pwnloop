@@ -31,6 +31,20 @@ RUN mkdir -p /opt/static && cd /opt/static && \
     ; do curl -fsSL -O "$u" || echo "download failed: $u" >> /opt/skipped-downloads.txt ; done && \
     gunzip -f chisel_*.gz 2>/dev/null || true ; chmod +x /opt/static/* 2>/dev/null || true
 
+# ligolo-ng, which references/pivoting.md has always documented and this image
+# never installed — the reference told the operator to run a binary that was not
+# there. Resolved through the GitHub API rather than a pinned URL, so the image
+# tracks upstream instead of 404ing the next time it is built; a failed download
+# degrades the image rather than breaking the build.
+COPY fetch-release.sh /usr/local/bin/fetch-release
+RUN chmod +x /usr/local/bin/fetch-release && \
+    fetch-release nicocha30/ligolo-ng 'proxy.*linux_arm64' /opt/static 'ligolo-ng|proxy' ; \
+    fetch-release nicocha30/ligolo-ng 'agent.*linux_amd64' /opt/static 'ligolo-ng|agent' ; \
+    cd /opt/static && rm -f ./*.tar.gz ./*.tgz ./*.zip ; \
+    [ -f proxy ] && mv -f proxy ligolo-proxy ; \
+    [ -f agent ] && mv -f agent ligolo-agent ; \
+    chmod +x /opt/static/* 2>/dev/null ; true
+
 # Kali ships rockyou compressed; every playbook expects the plain file.
 RUN gunzip -k /usr/share/wordlists/rockyou.txt.gz 2>/dev/null || true
 
