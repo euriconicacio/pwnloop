@@ -385,17 +385,46 @@ you keep working.
 
 ## Write back into the loop
 
-Same discipline as a single-host run, and it matters more here because a campaign
-produces many hosts' worth of lessons at once:
+This is not optional and it is not the report's job. A campaign produces many
+hosts' worth of lessons at once, and they are transversal by nature — the
+techniques that move you through a lab are the same ones a single machine needs:
 
-- a transferable technique → the relevant `pwnloop/references/` file, as method
-  and never as this lab's answer;
+- a transferable technique → the relevant `pwnloop/references/` file;
+- a campaign-scale lesson (an ordering that wasted a session, a state habit that
+  saved one) → **this** skill, not the single-host one;
 - an operator-specific pattern → `memory/local.md`, one line;
 - a tool you had to install → `docker/packages.local.txt`;
 - a mistake a rule would have prevented → the rule.
 
-Campaign-scale lessons — an ordering that wasted a day, a state habit that saved
-one — belong in this skill, not in the single-host one.
+### The Pro Lab constraint on what you may write
+
+`skills/` and `references/` are **tracked and public**. A Pro Lab is **never
+retired**, so publishing its solution is prohibited indefinitely — which means
+the write-back rule that is about methodology quality on a machine is also a
+platform-rules boundary here, and it is the one place where a well-intentioned
+reference entry can do real damage.
+
+Write the **class**, never the chain. Two examples from the same discovery:
+
+> ✗ "Puppet master on 8140 with CA pm01 → pull the agent cert from the file
+> server → POST `/puppet/v3/catalog/<node>` → the catalog carries the deploy
+> credential." — that is this lab's answer, written down in public.
+>
+> ✓ "A configuration-management master (Puppet/Chef/Salt/Ansible/SCCM) is a
+> credential hub and an RCE fan-out: it authenticates its agents with certs you
+> can often steal from any managed host, and the compiled catalog it serves
+> contains the secrets it is meant to deploy. Enumerate it as an authenticated
+> API, not as a web server." — that is the technique, and it works on targets
+> that have nothing to do with this lab.
+
+**The test before you commit an entry:** could a reader use it to identify the
+lab, or to skip a step on it? If yes, it belongs in `memory/local.md`, which is
+gitignored, or in the campaign directory — not in `references/`. When in doubt,
+write the class in `references/` and keep the specifics local; the specifics are
+the half that ages worst anyway.
+
+The same applies to evidence: no lab hostnames, no domain names, no credential
+values, no flag values, no IPs from the lab's ranges in anything tracked.
 
 ## Reporting to the operator
 
