@@ -20,6 +20,19 @@ Engagements are expected to change the methodology (see `memory/patterns.md`),
 so minor releases are the normal cadence. An entry that says only "ran a box"
 does not belong here — what belongs is what the run *changed*.
 
+## [1.8.2] — 2026-08-05
+
+### Fixed
+- **The README never said the kit does more than one machine.** Campaign mode
+  shipped in 1.7.0 and the intro still described a single-host tool, while the
+  campaign section carried "Unreleased, on the `v2-campaign` branch" — in a
+  published README, naming a branch that no longer exists. The intro now states
+  both scales and which version brought the second, and the banner stops calling
+  itself a lab-*machine* loop.
+- The banner's tagline is padded with `printf %-58s`, which counts bytes rather
+  than columns, so a multi-byte dash in the art shifts the frame. ASCII only in
+  that string.
+
 ## [1.8.1] — 2026-08-05
 
 ### Fixed

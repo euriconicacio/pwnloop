@@ -10,17 +10,23 @@
 │  dP                                                dP        │
 │                                                              │
 │  by Eurico Nicacio (h3llh0und)                               │
-│  autonomous lab-machine engagement loop                      │
+│  autonomous lab engagement loop: one host or a network       │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 [![release](https://img.shields.io/github/v/release/euriconicacio/pwnloop?label=version&color=e06c5a)](https://github.com/euriconicacio/pwnloop/releases)
 [![license](https://img.shields.io/github/license/euriconicacio/pwnloop?color=8a8a8a)](LICENSE)
 
-An autonomous lab-machine engagement kit for Claude Code: a disposable Kali
-container, a skill that drives it, and a slash command that turns "here is an
-IP" into a full recon → foothold → privilege-escalation → cleanup → report run
-you can watch happen.
+An autonomous lab engagement kit for Claude Code: a disposable Kali container,
+the skills that drive it, and slash commands that turn "here is an IP" into a
+full recon → foothold → privilege-escalation → cleanup → report run you can
+watch happen.
+
+It works at two scales. **One machine** — `/pwnloop <ip>` — is the original loop
+and is unchanged. **A whole network** — `/pwnloop-lab <entry>`, since v1.7.0 — is
+a campaign: many hosts, most of them unreachable until another one falls, run
+across as many sessions as it takes. The machine loop becomes the inner loop of
+the campaign, so there is one methodology, not two.
 
 ```
 > /pwnloop 10.129.50.240
@@ -327,7 +333,8 @@ dead ends and why. Merging them serves neither audience.
 
 ## Campaign mode — multi-host labs
 
-> Unreleased, on the `v2-campaign` branch.
+> Since v1.7.0. First completed campaign, and what it taught the loop, in
+> [v1.8.0](CHANGELOG.md#180--2026-08-05).
 
 A Pro Lab is not a long machine. It is a graph of hosts where most targets are
 unreachable until another one is owned, and where the work outlives a context

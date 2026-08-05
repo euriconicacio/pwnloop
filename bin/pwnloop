@@ -348,7 +348,7 @@ dP                                                dP
 ART
   _banner_row '' ''
   _banner_row "$V" "v${ver} by Eurico Nicacio (h3llh0und)"
-  _banner_row "$D" 'autonomous lab-machine engagement loop'
+  _banner_row "$D" 'autonomous lab engagement loop: one host or a network'
   printf '%s└%s┘%s\n\n' "$B" "$bar" "$R"
 }
 
