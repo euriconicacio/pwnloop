@@ -239,6 +239,22 @@ campaign_status() {
          "  [\(.id)] p\(.prio) \(.kind) \(.target) — \(.note)"))
      else empty end)
   ' "$f"
+  _nudge_rename
+}
+
+# The close-out step that asks for the lab's name is the easiest one to skip:
+# by then the flags are in and the run feels finished. A campaign still named
+# after its entry point once flags exist is almost certainly one that never
+# closed out, so say so every time the dashboard is printed.
+_nudge_rename() {
+  local lab; lab=$(_lab 2>/dev/null) || return 0
+  case "$lab" in
+    *[!0-9-]*) return 0 ;;   # already has a real name
+  esac
+  [ "$(jq '[.hosts[].flags[]?] | length' "$(_cjson)")" -gt 0 ] || return 0
+  echo
+  echo "!  this campaign is still named after its entry point. Ask the operator"
+  echo "!  what the lab is called and run: pwnloop campaign rename <name>"
 }
 
 # network.md is the operator-facing render of campaign.json. Rewritten on every
