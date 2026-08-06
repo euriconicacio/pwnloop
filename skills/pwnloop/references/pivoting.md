@@ -158,6 +158,26 @@ there, and have the target pull it over the internal network at full speed;
 route only the small operations through the proxy. Reverse the same shape for
 pulling a large dump out.
 
+Two failure modes that read as "broken exploit" but are really the transport:
+
+- **Multi-RPC exchanges over a SOCKS proxy drop mid-sequence.** DRSUAPI DCSync
+  and RemoteRegistry `reg backup` (SaveKey) are several round-trips on one
+  session; through proxychains the session dies partway and surfaces as
+  `STATUS_INVALID_HANDLE` / "error while reading from remote", *not* as
+  access-denied — so it looks like a rights problem when it's a stability
+  problem. Give the command channel a single stable hop instead: an SSH
+  **local-forward** to the DC's SMB port (`ssh -L 127.0.0.1:445:<dc-ip>:445 …`,
+  then point the tool at `-target-ip 127.0.0.1` while keeping the real hostname
+  for the Kerberos SPN) is far steadier than a SOCKS proxy for these.
+- **The receive side is the bottleneck for big dumps.** Registry hives out of a
+  DC (`SECURITY` is tiny, `SYSTEM` is ~16 MB) fail on the large one while the
+  small ones succeed, because the write crosses your client-side tunnel. Run the
+  SMB *receive* target (smbserver) as close to the victim as you can — ideally on
+  an owned host in the same segment. And RemoteRegistry **stalls after an aborted
+  SaveKey**: every following call returns `INVALID_HANDLE` until it resets, so
+  space retries out; keep the hives that already landed so a re-run skips them
+  (`ERROR_ALREADY_EXISTS`) and only the small one has to transfer again.
+
 ## Discovery from inside
 
 The moment you own a host, mine it for the next subnet:

@@ -122,6 +122,20 @@ Pinning the version is step one; the reasoning is the point:
   (arbitrary vs linear write, mitigations, whether a public 64-bit exploit even
   exists) before spending hours — the intended path is often a cheaper bug in the
   same binary.
+- **A blocked *precondition* is not a dead-end — it is the signal to re-hunt.**
+  The most expensive failure mode is locking onto the first CVE you find and
+  fighting a precondition you can't satisfy: an approval/review gate on a CI or
+  forge action, a required sudoers rule, a role you don't hold, a patched sink,
+  an auth requirement with no approver. Before concluding "no path", go back and
+  enumerate the *other* CVEs for that exact version. The intended door is
+  frequently a **sibling CVE with a completely different trigger** — a
+  logic/race flaw where you were stuck on an approval flaw, an unauthenticated
+  event where you were blocked on auth, a second bug in the same product that
+  needs no privilege at all. This is doubly true for web apps, forges and CI
+  platforms, where one product version often ships several unrelated advisories.
+  Re-hunting costs minutes; fixating on one gated CVE has cost whole runs. When
+  you catch yourself repeatedly working around the *same* wall, that is the cue
+  to widen the CVE search, not to dig harder.
 
 ## DNS (53)
 
