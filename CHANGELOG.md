@@ -20,6 +20,61 @@ Engagements are expected to change the methodology (see `memory/patterns.md`),
 so minor releases are the normal cadence. An entry that says only "ran a box"
 does not belong here — what belongs is what the run *changed*.
 
+## [1.9.0] — 2026-08-08
+
+A single-host run that failed three times at the same three seams — a normalised
+traversal that read as patched, a hash format that read as an uncrackable
+password, and a sudo rule that read as restrictive. All three are cases where the
+tool's *silence* was mistaken for a negative result.
+
+### Added
+- **`references/web.md` — path traversal in the URL path needs `--path-as-is`.**
+  When the sink is a static/plugin/asset route rather than a parameter, `curl`
+  and most HTTP libraries collapse `..` client-side, so a live vulnerability
+  answers 404 and the run moves on. Also: prioritise the app's own state store
+  over `/etc/passwd` (the database and config hold the hashes, API keys and the
+  encryption key), read a stock config *because* an all-commented one proves the
+  documented default key is in use, and recognise two structural limits instead
+  of retrying them — a read bounded by a container's namespace, and a
+  size-declaring handler that returns `/proc` as empty because procfs reports
+  `st_size` 0.
+- **`references/cracking.md` — application hash stores.** No `*2john` tool
+  produces the format an app's own `user` table stores; reconstruct john's syntax
+  from the hashing code (KDF, iterations, salt column, output length). The two
+  failures both look exactly like "not in the wordlist": adapted-base64 encoding,
+  and a digest longer than the format loads — john's `PBKDF2-HMAC-SHA256` takes
+  32 bytes and says only `No password hashes loaded`. A longer PBKDF2 digest can
+  be truncated, because the derivation is block-concatenated. **Validate the
+  pipeline with a control hash of a password you chose before believing any
+  negative result.**
+- **`references/privesc-linux.md` — a trailing `*` in a sudo rule grants the
+  binary's entire flag surface.** Read the rule as `sudo` implements it: any
+  option is in scope, including the ones that change what privilege the work runs
+  with (`--privileged`, `-u 0`, `-v /:/host`; `-o`/`-f`/`--config` write or load
+  code; `-e`/`-c`/`--eval`). The escalation is a documented feature of the
+  allowed binary, so nothing looks anomalous — name the wildcard as the
+  vulnerability, not the runtime.
+- **`references/privesc-linux.md` — map each localhost listener to its owning
+  UID.** `hidepid` blinds `ps`, but `/proc/net/tcp` still carries the socket
+  owner in field 8. A stack of daemons owned by UID 0 means any command sink in
+  one of them is a *root* sink. Two own-goals turn such a daemon's "secret" into
+  a public value — a stored credential hash accepted as the signing key, and a
+  cluster token that doubles as an API bypass — after which the escalation is the
+  config-as-command-sink (event hooks, `on_*`, notification "run a command") plus
+  the daemon's own synchronous trigger so you don't wait on a natural event.
+
+## [1.8.3] — 2026-08-05
+
+### Added
+- **`references/services.md` — a blocked precondition is a cue, not a dead end.**
+  An approval gate, a missing role, a patched sink or an auth path with no
+  approver means re-enumerating the version's *other* CVEs for a sibling with a
+  different trigger.
+- **`references/pivoting.md` — pivot transport reliability.** Multi-RPC
+  operations (DCSync, registry `SaveKey` backups) drop through a SOCKS proxy as
+  `INVALID_HANDLE`; prefer a stable SSH local-forward, keep the SMB receive host
+  in-segment, and space retries around RemoteRegistry stalls.
+
 ## [1.8.2] — 2026-08-05
 
 ### Fixed
@@ -693,7 +748,14 @@ machines, both Linux (one easy, one medium).
 - Small sample, and no machine has defeated the loop yet — so its failure mode
   is still unobserved.
 
-[Unreleased]: https://github.com/euriconicacio/pwnloop/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/euriconicacio/pwnloop/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.9.0
+[1.8.3]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.8.3
+[1.8.2]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.8.2
+[1.8.1]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.8.1
+[1.8.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.8.0
+[1.7.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.7.0
+[1.6.1]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.6.1
 [1.6.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.6.0
 [1.5.1]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.5.1
 [1.5.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.5.0

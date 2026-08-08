@@ -42,6 +42,27 @@ spawns a shell, then `sudo LD_PRELOAD=/tmp/x.so <anything>`. `LD_LIBRARY_PATH`
 kept works the same way with a fake `libc`.
 Wildcards in a sudo rule (`sudo /bin/tar -czf /tmp/x /var/www/*`) → checkpoint
 injection or filename-as-argument tricks.
+
+**A trailing `*` grants the binary's entire *flag* surface, not just its
+operands.** Read the rule the way `sudo` implements it, not the way its author
+meant it: everything after the fixed prefix is yours, so any option the binary
+accepts is in scope — including options that change *what privilege the work runs
+with*. Rules of this shape look restrictive and are usually equivalent to root.
+Take the allowed prefix, read the binary's `--help`, and ask which flag changes
+the security context rather than the output:
+
+- container runtimes — `--privileged`, `-u 0`, `--cap-add`, `-v /:/host`,
+  `--pid=host` (a `docker exec *` rule is root: `--privileged` gives the exec'd
+  process the full capability set, and with `CAP_SYS_ADMIN` plus the host's block
+  devices visible in the container you `mount /dev/sdaN /mnt/h` and read/write
+  the host filesystem, or `chroot` it for a shell — see `containers.md`)
+- anything with `-o`/`--output`/`--config`/`-f` — write as root, or load a config
+  that loads code (`httpd -f`, `rsync --rsync-path`, `tar --to-command`)
+- interpreters and multiplexers — `-e`, `-c`, `--exec`, `--eval`, `-C <dir>`
+
+The escalation here is a *documented feature* of the allowed binary, so nothing
+looks anomalous. When you write it up, name the wildcard as the vulnerability,
+not the runtime.
 `(ALL, !root)` in older sudo → CVE-2019-14287, `sudo -u#-1 /bin/bash`.
 Sudo `< 1.9.5p2` → Baron Samedit (CVE-2021-3156), a heap overflow reachable with
 **no sudo rights at all** (`sudoedit -s '\' $(perl -e 'print "A"x1000')` to
@@ -217,6 +238,33 @@ The constructor fires during the dlopen, before any "not a real module" error.
 Something listening on 127.0.0.1 that is not exposed externally is usually
 where the escalation lives — an unauthenticated admin panel, a Redis, a
 database. Forward it out (see `references/pivoting.md`) and attack it.
+
+**Map each localhost port to its owning UID before assuming it's harmless.**
+`ps` may hide other users' processes (`hidepid`), but `/proc/net/tcp` still lists
+every listener with its socket owner:
+`awk 'NR>1{split($2,a,":"); print strtonum("0x"a[2]), $8}' /proc/net/tcp | sort -nu`
+(field 8 = UID). A stack of "media"/"monitoring" daemons all owned by **UID 0**
+is the tell: any command sink in one of them is a *root* command sink, not a
+service-user one. Rank these by "runs as root" before "looks exploitable".
+
+**A root daemon whose auth secret is a readable file is pre-authenticated for
+you.** Web/agent daemons commonly sign requests or check a token; read the
+verifier before trying to crack anything. Two recurring own-goals turn the
+"secret" into a public value:
+- the stored credential *is already the hash*, and the code accepts that stored
+  value **as the signing key** — so possession of the world-readable hash (no
+  crack) forges valid admin requests;
+- an inter-node/cluster token doubles as a full API bypass when replayed.
+
+Then look for the config-as-command-sink: a field the (now-authenticated) admin
+API writes into the daemon's own config that later runs as a shell command —
+event hooks, notification "run a command", `on_*`/`ExecStart*`. Set it, then find
+the daemon's *own* synchronous trigger (a webcontrol `action/…`, a "test",
+`emulate`) so you don't wait on a natural event. Class example: a root-owned
+CCTV/monitoring UI where the request signature key is the readable admin-password
+hash and a "command notification" field is appended to the capture daemon's
+`on_event_start`. Pin the version, read the verifier and the config mapping,
+choose the sink — never memorise one product's recipe.
 
 ## Password reuse
 

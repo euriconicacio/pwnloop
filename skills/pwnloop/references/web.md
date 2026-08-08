@@ -57,6 +57,35 @@ pwnloop x "ffuf -u 'http://machine.htb/page.php?FUZZ=test' \
 Source disclosure via the `php://filter` wrapper is the highest-value LFI
 outcome: read `config.php`, `db.php`, `.env` and you usually have credentials.
 
+**Path traversal in the URL *path* (not a parameter) needs `--path-as-is`.**
+When the sink is a static/plugin/asset route — `/public/plugins/<id>/..%2f..` and
+friends — `curl` and most HTTP libraries normalise `..` client-side and send the
+collapsed path, so a live vulnerability returns a clean 404 and reads as patched.
+`curl --path-as-is` (or a raw socket) sends the dots. Confirm with a file that
+must exist (`/etc/passwd`) before trusting any negative result on this class.
+
+Prioritise what you read: **the app's own state store first, not `/etc/passwd`.**
+A file-read primitive against a packaged application is worth most when pointed
+at its database and config — `grafana.db`, `*.sqlite`, `config.php`, `.env`,
+`settings.py`, `application.yml`. Those hold the user table (crackable hashes),
+the API keys, and the encryption key that decrypts everything else. Read the
+config even when it looks empty: an entirely-commented stock config proves the
+product's **documented default** signing/encryption key is in use, which turns
+every stored secret in the database into cleartext.
+
+Two structural limits worth recognising rather than retrying:
+
+- The read is bounded by whatever namespace the app runs in. An Alpine/BusyBox
+  `/etc/passwd` from an app you know is on Ubuntu means you are reading a
+  **container**, and `/etc/shadow` there is the container's, not the host's.
+  Note the container id from `/etc/hosts` — you will want it after a shell.
+- **A handler that serves files by their declared size returns empty for
+  `/proc`.** procfs reports `st_size` 0, so `/proc/self/environ`,
+  `/proc/1/environ` and `/proc/self/cmdline` all come back zero-length even
+  though the read succeeded. That is the mechanism, not a permission problem —
+  the usual "read the process environment for deployment secrets" move is simply
+  unavailable through this class of primitive.
+
 **File upload** — check what the filter actually validates: extension, MIME,
 magic bytes. Bypasses: `.phtml`, `.php5`, `.phar`, double extension,
 `.htaccess` upload, null byte on old stacks, valid image header + PHP tail.

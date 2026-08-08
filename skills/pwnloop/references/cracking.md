@@ -47,6 +47,56 @@ pwnloop x "gpg2john key.asc     > g.hash"
 pwnloop x "pdf2john file.pdf    > p.hash"
 ```
 
+## Application hash stores: rebuild the format by hand, then prove it
+
+Most application databases (a web app's `user` table, an exfiltrated SQLite/MySQL
+dump) store a hash no `*2john` tool produces. Reconstruct john/hashcat's syntax
+yourself from the app's own hashing code or docs — the parameters you need are
+the KDF, the iteration count, the salt (usually a neighbouring column, raw ASCII)
+and the output length.
+
+Two things go wrong, and both look exactly like "the password isn't in the
+wordlist":
+
+- **Encoding.** John's PBKDF2 formats want the salt and digest in *adapted*
+  base64 (standard alphabet, `+`→`.`, padding stripped), not hex.
+- **Output length.** A format silently refuses lines whose digest length it does
+  not support — john's `PBKDF2-HMAC-SHA256` loads only a **32-byte** digest, and
+  a longer one produces `No password hashes loaded (see FAQ)` rather than an
+  error naming the cause.
+
+**A longer PBKDF2 digest can simply be truncated to what the cracker accepts.**
+PBKDF2 derives output one HMAC block at a time and concatenates, so the first
+32 bytes of a 50-byte derivation are bit-identical to a 32-byte derivation over
+the same password/salt/iterations. Cut the hex and load it.
+
+**Always validate the pipeline with a control hash before trusting a negative
+result.** Derive a password *you choose* under the same parameters, add it to the
+hash file, and crack it with a one-word wordlist. If the control does not fall,
+your encoding is wrong — you have learned nothing about the real hash.
+
+```bash
+python3 - <<'EOF'
+import base64, hashlib
+ab64 = lambda b: base64.b64encode(b).rstrip(b'=').replace(b'+', b'.').decode()
+j = lambda salt, dk: "$pbkdf2-sha256$%d$%s$%s" % (ITER, ab64(salt.encode()), ab64(dk))
+# real hash: hex from the DB, truncated to the 32 bytes john will load
+print("victim:" + j(SALT, bytes.fromhex(HEX[:64])))
+# control: same parameters, password known to me
+print("control:" + j(SALT, hashlib.pbkdf2_hmac("sha256", b"controlpw123", SALT.encode(), ITER, 32)))
+EOF
+john --format=PBKDF2-HMAC-SHA256 --wordlist=ctl.txt hashes   # control must crack
+john --format=PBKDF2-HMAC-SHA256 --wordlist=rockyou.txt hashes
+```
+
+*(Example of the class: Grafana's `user` table stores PBKDF2-HMAC-SHA256,
+10000 iterations, 50-byte digest as hex, with the per-user salt in the adjacent
+`salt` column.)*
+
+A sound KDF is not a strong password. A 10k-iteration PBKDF2 hash of a top-1 %
+wordlist entry falls in well under a minute on CPU — so run the wordlist before
+concluding an application's hashing "looks modern enough to skip".
+
 ## Running it
 
 ```bash
