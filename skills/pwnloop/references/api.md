@@ -107,3 +107,32 @@ usually the bridge to an internal service that holds the real vulnerability:
 
 Cross-reference with `ss -tulpn` output once you have a shell — a service bound
 to `127.0.0.1` that you saw from the outside via SSRF is the intended path.
+
+## SOAP / JAX-WS services (and CXF MTOM file-read)
+
+A recovered `.jar`/`.war` that decompiles to a JAX-WS service (annotations
+`@WebService`, an Apache CXF `JaxWsServerFactoryBean`, a WSDL at `?wsdl`) is an
+XML-parsing surface — reason about it like any XXE target, but know the modern
+stacks block the naive version and have a second door:
+
+1. **Map the operation from the WSDL/decompiled interface.** One operation that
+   takes a complex type and *echoes a field back* is a reflected file-read oracle.
+   Send a normal request first and confirm the echo.
+2. **Try classic XXE, but expect it to be refused.** Hardened Woodstox/CXF answers
+   an inline `<!DOCTYPE …>` with `Error reading XMLStreamReader: Received event
+   DTD …` — that's `supportDTD`-off, not a bypassable parser. Don't grind on it.
+3. **Pin the framework and hunt its *own* CVEs — the parser block doesn't cover the
+   whole stack.** Read `META-INF/maven/<group>/<artifact>/pom.properties` for exact
+   versions. For Apache CXF, the databinding/attachment layer is a separate attack
+   surface from the StAX reader: e.g. an MTOM message
+   (`Content-Type: multipart/related; type="application/xop+xml"`) whose element is
+   `<xop:Include xmlns:xop="http://www.w3.org/2004/08/xop/include" href="file:///path"/>`
+   makes CXF *fetch the href itself* — file read / SSRF that never touches the DTD
+   path. (Vulnerable ranges are a version lookup; the technique is the point.) If the
+   operation echoes the field, the file returns inline (often base64) — a clean,
+   shell-independent read primitive you can keep using after you have a foothold.
+
+The class: **when the obvious XML injection is patched, the databinding/attachment
+layer of the same server often reaches files or URLs by a different code path.**
+Pin the version, enumerate that product's CVEs, and read the PoC for *which layer*
+fetches the href.

@@ -20,6 +20,47 @@ Engagements are expected to change the methodology (see `memory/patterns.md`),
 so minor releases are the normal cadence. An entry that says only "ran a box"
 does not belong here — what belongs is what the run *changed*.
 
+## [1.10.0] — 2026-08-10
+
+Two single-host runs. Both reached root, and both taught the same lesson from
+opposite ends: read the *whole* surface of the thing you already have before
+reaching for a harder primitive. On Helix an unauthenticated OPC UA server let a
+low-priv shell forge a reactor hazard and open a root maintenance window; on
+DevArea a root log-reader that validated only the first symlink hop leaked root's
+SSH key — while a fragile write-race in the *same* script nearly swallowed the run.
+
+### Added
+- **`references/services.md` — OPC UA (4840) OT/ICS playbook.** Enumerate every
+  variable's *access level* (not just its value) to find the writable node; look
+  for a read-only value that is *derived* from a writable one (a calibrated reading
+  = raw sensor + attacker-writable offset), which lets you forge a condition the
+  physical sensor never produced; then find the privileged consumer (a root
+  "safety"/monitor daemon) that acts on it. Same class as an anonymous MQTT broker
+  a root worker drains: an unauthenticated control-plane whose integrity a
+  higher-privilege component trusts.
+- **`references/api.md` — SOAP/JAX-WS services and the CXF MTOM file-read.** When
+  the obvious inline-DTD XXE is refused (hardened Woodstox), pin the framework from
+  `META-INF/maven/**/pom.properties` and attack a *different layer*: an Apache CXF
+  MTOM message with `<xop:Include href="file:///…"/>` makes the server fetch the
+  href itself (file read / SSRF) with no DTD involved, and an echoing operation
+  returns the file inline — a clean, shell-independent read primitive.
+- **`references/privesc-linux.md` — first-hop-only symlink validation is defeated
+  by a symlink chain.** A root file-reader that inspects only a symlink's immediate
+  target (and rejects `/`) but then `cat`s the path will follow a two-link chain:
+  hop-1 an innocent relative name, hop-2 the real target (`/root/.ssh/id_*`). The
+  entry also states the run's method lesson: enumerate every subcommand of a
+  root-run tool and prefer a read/logic flaw to a fragile write race.
+- **`writeups/helix.md`** (Medium, Linux/OT) — Apache NiFi 1.21.0 anonymous
+  `execute-code` RCE → operator SSH key in the NiFi support bundle → OPC UA
+  calibration spoof opens a root maintenance window → `sudo helix-maint-console`.
+- **`writeups/devarea.md`** (Medium, Linux) — anonymous FTP → CXF 3.2.14 MTOM file
+  read (CVE-2022-46364) → Hoverfly middleware RCE → forged Flask session + a
+  `$()`-through-blacklist command injection → root via the chained-symlink read.
+
+### Changed
+- Track record in `README.md`: 14 → 17 machines rooted, and the category list now
+  includes OT.
+
 ## [1.9.0] — 2026-08-08
 
 A single-host run that failed three times at the same three seams — a normalised

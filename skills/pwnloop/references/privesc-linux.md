@@ -177,6 +177,28 @@ arbitrary file write as root. Useful targets, in order of cleanliness:
 `/root/.ssh/authorized_keys` (additive, reversible), a file in `/etc/cron.d`
 (needs mode 0644), a script in `/etc/cron.hourly` (needs the execute bit).
 
+**A hand-rolled symlink check that inspects only the *first* hop is defeated by a
+symlink chain.** A root log-viewer / file-reader often "validates" a symlink like
+`target=$(ls -l "$dir/$name" | awk '{print $NF}')` and rejects `target` if it
+contains `/` or `..` — then `cat`s the path anyway. `ls -l` shows only the
+*immediate* target, but `cat` follows the *whole* chain. So chain it: hop-1 is an
+innocent relative name in the same dir (passes the check), hop-2 (which the check
+never sees) points at the real prize:
+
+```bash
+ln -sf /root/.ssh/id_ed25519  "$logdir/y"   # hop 2: absolute, never inspected
+ln -sf y                      "$logdir/x"   # hop 1: relative → passes the check
+sudo <tool> logs x                          # cats root's private key → ssh root@host
+```
+
+You need write in the directory the tool reads — own it, or reach it as the tool's
+service user (a lateral step is often exactly for this). The same flaw enables an
+arbitrary-write variant when the root job *writes* through the first-hop-checked
+name. The clean fix is `realpath`/`readlink -f` + a prefix-containment test, so
+name that as the vulnerability. **Prefer this read/logic flaw to racing a
+`rm`+recreate symlink guard elsewhere in the same script** — enumerate every
+subcommand of a root-run tool before committing to a fragile write race.
+
 Note that `git` is a common untrusted source here — and that git's own
 restrictions are a porcelain behaviour, not a format one. `git add` refuses a
 path containing `..`, but tree objects are just name-to-hash maps and
