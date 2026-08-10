@@ -257,6 +257,47 @@ primitive if some agent fetches it. Publish a URL pointing at your listener and
 watch — if nothing calls back, the topics are publish-only telemetry and writing
 to them buys you nothing.
 
+## OPC UA (4840) — OT/ICS
+
+An industrial-automation box (SCADA/HMI/PLC theme) almost always exposes an OPC UA
+server, often on `127.0.0.1:4840` reachable only after a foothold. Like MQTT, lab
+deployments routinely allow **anonymous read *and* write**. Tunnel it back and drive
+it with python `asyncua` (`pip install asyncua`; or `python3-asyncua`):
+
+```python
+from asyncua import Client, ua
+c = Client("opc.tcp://127.0.0.1:4840/<path>/")   # path from the HMI page / banner
+async with c:
+    for ch in await c.nodes.objects.get_children():
+        # walk only NamespaceIndex>0 (the vendor 'urn:*:ot' namespace); ns=0 is huge/standard
+        ...
+    n = c.get_node("ns=2;i=6")
+    print(await n.read_value(), await n.get_user_access_level())   # access w/ CurrentWrite = writable
+    await n.write_value(ua.DataValue(ua.Variant(14.0, ua.VariantType.Double)))
+```
+
+How to *reason* about it, not a recipe:
+
+1. **Enumerate every variable's access level, not just its value.** `get_user_access_level()`
+   returning a set containing `CurrentWrite` (bit 1) is the whole game — that node is your
+   actuator. Read-only sensors are noise; find the writable ones (calibration, mode,
+   setpoints, override flags).
+2. **Look for a value that is *derived* from a writable one.** The intended bug is usually
+   that a read-only "effective" reading is computed as `raw_sensor + writable_offset`
+   (calibration), or a setpoint the logic trusts. You can't write the sensor, but you can
+   write the offset — so you fabricate a reading the physical sensor never produced.
+3. **Find who consumes the fabricated value.** A separate *root* process (a "safety"/monitor
+   daemon) reacting to the value is the privesc: it will take a privileged action (open a
+   maintenance window, write a state file, run a script) on a condition you just forged.
+   Read that daemon's logic (or the HMI source that renders the same model) to learn the
+   exact threshold and what the action is. The pivot is then a normal local privesc
+   (e.g. a `sudo` entry gated on the state file it writes).
+
+The transferable class: *an unauthenticated control-plane whose integrity a higher-privilege
+component trusts.* Same shape as an anonymous MQTT broker whose payloads coerce an agent, or
+a message queue a root worker drains. Fix in the report is auth/signing on the OPC UA
+endpoint and having safety logic read the raw sensor, not the calibrated value.
+
 ## SMTP / IMAP / POP3 (25/587/143/110/993/995)
 
 ```bash
