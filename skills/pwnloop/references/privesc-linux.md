@@ -20,6 +20,19 @@ netstat -tulpn 2>/dev/null || ss -tulpn            # internal-only services
 find / -writable -type d 2>/dev/null | grep -v proc | head
 ```
 
+**Ask the filesystem what each of your groups grants.** `id` gives you group names;
+their names are marketing, the file list is the truth:
+
+```bash
+for g in $(id -Gn); do echo "== $g"; find / -group "$g" -not -path '/proc/*' 2>/dev/null | head -20; done
+```
+
+A non-default supplementary group usually gates a handful of paths, and they tend
+to explain each other — a service's config plus the key material that config
+references. That is a two-command answer to "why does this account exist", and it
+beats reasoning about what a group called `deployers` or `operator` *sounds* like
+it should do.
+
 Credential hunting:
 ```bash
 grep -rniE 'password|passwd|secret|api[_-]?key' /var/www /opt /home /etc 2>/dev/null | grep -v Binary | head -50

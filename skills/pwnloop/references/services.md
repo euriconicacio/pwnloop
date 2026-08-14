@@ -88,6 +88,40 @@ password from elsewhere, spray it. Private keys found on disk go in `loot/`,
 pwnloop x "ssh2john id_rsa > /engagements/$NAME/loot/key.hash && john --wordlist=/usr/share/wordlists/rockyou.txt /engagements/$NAME/loot/key.hash"
 ```
 
+**Before cracking a passphrase, check whether there is one.** Base64-decode the
+first line of the key body: after the `openssh-key-v1\0` magic come the cipher and
+KDF names, and `none`/`none` means the key is unencrypted. One command instead of
+a wordlist — and it stops you attributing a *permissions* win to a cracking win.
+
+**Read `sshd_config` and its drop-ins as an attack surface, not as trivia.**
+`/etc/ssh/sshd_config.d/*.conf` is where labs put the interesting deviation:
+
+- `TrustedUserCAKeys <path>` — sshd accepts **certificates** signed by that CA.
+  Now find who can read the CA's *private* key (usually the same path without
+  `.pub`). If any account you can reach can read it, that account is root:
+
+  ```bash
+  ssh-keygen -t ed25519 -N "" -f k
+  ssh-keygen -s /path/to/ca -I anything -n root -V -5m:+2h k.pub
+  ssh -i k -o CertificateFile=k-cert.pub root@target
+  ```
+
+  Two conditions decide whether it works, and both are readable in the config:
+  **no `AuthorizedPrincipalsFile`/`AuthorizedPrincipalsCommand`** means a
+  certificate may claim any principal, and `PermitRootLogin prohibit-password`
+  does *not* exclude root — it permits root by key or certificate. Backdate the
+  validity (`-V -5m:...`), because a certificate that becomes valid "now" is
+  rejected on any clock skew and the failure is indistinguishable from an
+  untrusted CA.
+- `Match User`/`ForceCommand`/`AllowTcpForwarding no` — a jail; look for the web
+  or file-write surface it *doesn't* cover rather than attacking the jail.
+- `PasswordAuthentication yes` on a box that documents certificate auth is a
+  leftover, and it is exactly where a leaked service-account password lands.
+
+This is a custody failure, not a protocol one: an SSH CA is root-equivalent for
+every host that trusts it, so the finding to lead a report with is that the
+signing key was readable by the accounts authenticating *with* it.
+
 ## Telnet (23)
 
 Telnet is rare on modern boxes, so a telnetd — **especially a custom build, or

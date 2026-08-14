@@ -66,6 +66,53 @@ In order of likelihood on a lab box:
    check at all. Test by mangling the signature: if it still works, there is no
    verification.
 
+### Encrypted tokens (JWE): the envelope is not the authentication
+
+An app that advertises "tokens are encrypted" often means a **JWE** wrapping a
+signed JWT. Treat that as a *stronger* lead, not a weaker one, because two
+properties usually hold at once:
+
+- **RSA encryption uses the public key**, so a `/jwks` endpoint that publishes the
+  encryption key lets *anyone* produce a token the server decrypts successfully.
+  Decryptable is not authentic — the security rests entirely on the inner
+  signature check.
+- **That inner check is frequently guarded by an attacker-controlled condition.**
+  The recurring implementation is: parse the decrypted payload, cast it to the
+  signed-JWT type, and verify *only if the cast succeeded*. Feed it an unsigned
+  `PlainJWT` and the cast yields null, the verify branch is skipped, and the claims
+  are returned as authenticated:
+
+  ```java
+  SignedJWT signed = toSignedJWT(jwt);      // null for a PlainJWT
+  if (signed != null) { if (!signed.verify(v)) return null; }
+  return jwt.getJWTClaimsSet();             // trusted either way
+  ```
+
+  *Example of the class:* CVE-2026-29000, pac4j-jwt < 4.5.9 / 5.7.9 / 6.3.3 — but
+  the same shape is common hand-rolled, so test it even when the library is
+  current.
+
+**How to test it:**
+
+1. Fetch the JWKS unauthenticated and note `kid`, `kty`, and which key it is
+   (an `enc-key-*` kid, or the app's own docs, tells you it is the encryption key).
+2. Build the inner token **by hand** — most libraries refuse to emit `alg: none`.
+   It is three base64url segments with an empty third:
+   `b64({"alg":"none"}) + "." + b64(claims) + "."`
+3. Wrap it (`python3-jwcrypto`), matching the header the app advertises:
+   ```python
+   protected = {"alg":"RSA-OAEP-256","enc":"A128GCM","cty":"JWT","kid":"<from jwks>"}
+   t = jwe.JWE(plain_jwt.encode(), protected=json_encode(protected))
+   t.add_recipient(jwk.JWK(**jwks["keys"][0]))
+   print(t.serialize(compact=True))
+   ```
+4. Take the claim names, role strings and `iss` from the app's own client JS or
+   from a token you were legitimately issued — guessing `role` vs `roles` vs
+   `authorities` is the usual reason a correct forgery reads as a failure.
+
+If it works, keep going *inside* the app: an admin-only settings or user endpoint
+is where the reusable credentials live. The bypass is rarely the end of the chain.
+
 ## Session and auth logic
 
 - **IDOR** on any numeric or guessable identifier — the single highest-yield

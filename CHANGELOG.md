@@ -20,6 +20,52 @@ Engagements are expected to change the methodology (see `memory/patterns.md`),
 so minor releases are the normal cadence. An entry that says only "ran a box"
 does not belong here — what belongs is what the run *changed*.
 
+## [1.12.0] — 2026-08-14
+
+Principal, rooted in ~13 minutes, and the entries it produced are all about
+reading rather than scanning. The engagement's decisive artifact was a response
+header — `X-Powered-By: pac4j-jwt/6.0.3` — naming the component that decides
+whether you are authenticated, with a version. Everything else followed from
+pulling that thread: a published JWKS, an unsigned token inside an encrypted
+envelope, an admin API that hands out an SSH password, and an SSH CA whose
+private key is readable by the accounts that authenticate with it.
+
+### Added
+
+- `references/api.md` — **encrypted tokens (JWE): the envelope is not the
+  authentication**. RSA encryption uses the *public* key, so a published JWKS
+  lets anyone produce a decryptable token; the inner signature check is then
+  frequently guarded by an attacker-controlled condition
+  (`if (toSignedJWT(jwt) != null) verify(...)`), which an unsigned `PlainJWT`
+  walks straight past. Includes how to hand-build the `alg: none` inner token
+  (libraries refuse to emit it), how to wrap it, and the reminder to lift claim
+  names and role strings from the app's own client JS rather than guessing.
+  CVE-2026-29000 is cited as an example of the class, not as the recipe.
+- `references/services.md` — **`sshd_config` drop-ins as attack surface.**
+  `TrustedUserCAKeys` means certificates are accepted, so the question becomes who
+  can read the CA's private key; the two conditions that decide whether a forged
+  certificate works (no `AuthorizedPrincipalsFile`, and `PermitRootLogin
+  prohibit-password` permitting root *by certificate*) are both readable in the
+  config. Plus: check the key blob's cipher field for `none` before cracking a
+  passphrase, and backdate certificate validity or clock skew reads as an
+  untrusted CA.
+- `references/privesc-linux.md` — **ask the filesystem what your groups grant.**
+  `for g in $(id -Gn); do find / -group "$g"; done` — a non-default supplementary
+  group gates a handful of paths that usually explain each other, which beats
+  reasoning about what a group's name implies.
+
+### Changed
+
+- `docker/packages.local.txt` — added `python3-jwcrypto`, installed mid-run to
+  build the JWE forgery.
+
+### Published
+
+- [`writeups/principal.md`](writeups/principal.md) — Medium / Linux. Auth bypass
+  by forging an administrator session against a published public key, an admin
+  API that returns a live SSH password, and an SSH certificate authority whose
+  signing key is group-readable and unencrypted.
+
 ## [1.11.0] — 2026-08-14
 
 One single-host run (Kobold), and the entries it produced are mostly about
@@ -846,7 +892,8 @@ machines, both Linux (one easy, one medium).
 - Small sample, and no machine has defeated the loop yet — so its failure mode
   is still unobserved.
 
-[Unreleased]: https://github.com/euriconicacio/pwnloop/compare/v1.11.0...HEAD
+[Unreleased]: https://github.com/euriconicacio/pwnloop/compare/v1.12.0...HEAD
+[1.12.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.12.0
 [1.11.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.11.0
 [1.10.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.10.0
 [1.9.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.9.0
