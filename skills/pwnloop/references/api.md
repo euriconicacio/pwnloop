@@ -108,6 +108,34 @@ usually the bridge to an internal service that holds the real vulnerability:
 Cross-reference with `ss -tulpn` output once you have a shell — a service bound
 to `127.0.0.1` that you saw from the outside via SSRF is the intended path.
 
+### A talkative SSRF is a loopback port scanner, and that is often its real value
+
+Do not measure an SSRF only by whether it reaches something exploitable. Measure
+what its **error messages distinguish**. A handler that wraps the transport error
+and returns it verbatim gives you three separable states, which is everything a
+port scan needs:
+
+| response | meaning |
+|---|---|
+| `dial tcp 127.0.0.1:N: connect: connection refused` | closed |
+| `HTTP status <code> for URL ...` | open, speaks HTTP, non-200 |
+| a parse error naming the first byte (`invalid character '<'`) | open, and serving HTML rather than the expected JSON |
+
+Sweep the loopback range through it before you hold any credential. The service
+it uncovers is frequently where the actual foothold lives, while the app hosting
+the SSRF never gets exploited at all — so the finding to chase is the *map*, not
+the fetch.
+
+Two things to check in the source or by probe, because they decide the sweep's
+reach: whether the client validates scheme/host at all (`http.NewRequest` +
+`client.Do` with no allow-list is the common shape), and whether it follows
+redirects — a permissive fetcher plus your own `302` server extends the sweep to
+schemes the parameter parser would have rejected.
+
+**Report it even when you did not exploit it.** "Unauthenticated internal network
+mapping" is a real finding, and it is the one that explains how you found
+everything else.
+
 ## SOAP / JAX-WS services (and CXF MTOM file-read)
 
 A recovered `.jar`/`.war` that decompiles to a JAX-WS service (annotations

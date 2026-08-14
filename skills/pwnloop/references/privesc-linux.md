@@ -269,6 +269,20 @@ every listener with its socket owner:
 is the tell: any command sink in one of them is a *root* command sink, not a
 service-user one. Rank these by "runs as root" before "looks exploitable".
 
+**UID 0 says "root", not "interesting" — eliminate the box's own runtime daemons
+before you fuzz.** The same `/proc/net/tcp` trick that finds a root listener will
+not tell you *which* root process owns it, and you cannot read root's
+`/proc/<pid>/fd` from a low-priv shell. So before spending a wordlist on an
+unidentified port, list the root processes already visible in `ps` and ask which
+of them plausibly opens an HTTP socket. On any container host that is a short
+list — `containerd`, `dockerd`, `docker-proxy` are all root, all Go, and all
+capable of a debug/metrics listener on a high loopback port. Cheap discriminators,
+in order: (1) does a known daemon explain it; (2) does the service's own package
+or config document a debug/metrics address; (3) only then fuzz. **A non-default
+404 body is not evidence of a bespoke service** — plenty of standard daemons ship
+a custom string, and treating "this isn't Go's default 404" as proof of a custom
+app is how half an hour disappears into a runtime's debug endpoint.
+
 **A root daemon whose auth secret is a readable file is pre-authenticated for
 you.** Web/agent daemons commonly sign requests or check a token; read the
 verifier before trying to crack anything. Two recurring own-goals turn the

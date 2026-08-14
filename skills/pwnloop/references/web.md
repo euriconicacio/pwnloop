@@ -39,6 +39,13 @@ pwnloop x "ffuf -u http://$T/ -H 'Host: FUZZ.machine.htb' \
 The `-fs` filter is mandatory — without it every response matches. Take the
 size from an obviously-wrong host header first.
 
+**Filter on what a wrong host actually returns, not on what the right one
+returns.** Send a deliberately-bogus `Host:` before you fuzz and read the whole
+response line: many stacks answer an unknown vhost with a **redirect**, not a
+sized body, so `-fs <size-of-correct-vhost>` filters nothing and every candidate
+"matches". If the baseline is a 302, filter the *code* (`-fc 302`). One request
+up front turns an unreadable wall of hits into the two or three real names.
+
 ## Parameter fuzzing
 
 ```bash
@@ -164,6 +171,39 @@ __construct(){itemFile}}` → `PhpManager::init()`→`require(itemFile)`; CSRF f
   HTTP clients percent-encode `<`/`>`, and a stored `%3C?php` never executes.
   Keep the stored payload space-free (`<?=` needs no trailing space; pass the
   command through a `$_GET` param read at trigger time).
+
+**The app's own persisted state file, in a directory you can write, is code.**
+Distinct from LFI: nothing user-supplied reaches an `include()` path here — the
+app just persists small state as a *source file* in its data directory and
+`require`s it every request. Counters, rate limiters, caches, installer
+leftovers and "compiled" config all take this shape:
+
+```php
+<?php $GLOBALS['traffic_limiter'] = array( '<hash>' => '1771230844', );
+```
+
+Method:
+1. **Find the data directory and its mode.** These are the paths an installer
+   chmods loosely so the daemon can write them (`0777`, or group-writable to a
+   group your foothold user is in). A bind-mounted volume shared with a container
+   is the common modern shape — the host side and the container side have
+   different owners, and the loose mode is how they were reconciled.
+2. **You only need write on the *directory*.** A root-owned `0640` state file is
+   still replaceable: unlink it and create your own. Check the directory bit
+   before concluding the file is protected.
+3. **Pick the file that is read earliest.** A rate limiter is consulted *before*
+   request-body validation, so it executes on requests the app rejects — much
+   easier to trigger than one that only runs on a valid, well-formed operation.
+4. **Expect it to be one-shot.** The app rewrites the file with fresh state after
+   the request, wiping your payload. Rather than racing it for a shell, have the
+   payload write its output next to itself (`__DIR__."/.out"`) and read the result
+   through the shared mount — a re-plant per command is cheap and deterministic,
+   and a bind mount is a better channel than a reverse shell when the target's
+   busybox may lack `nc -e` or `mkfifo`.
+5. **Then ask what the execution is actually worth.** Here it landed as
+   `nobody:www-data` in an unprivileged container with no socket and no secrets —
+   a real finding, and not a step. Check `/proc/1/mountinfo` and the process's
+   uid immediately so you spend no more time than the primitive deserves.
 
 **SSTI — confirm the engine before the payload.** `{{7*7}}`→49 is Jinja2/Twig;
 `${7*7}`→49 is Freemarker/JSP-EL; `#{7*7}` is Ruby/Thymeleaf; `<%= 7*7 %>` is

@@ -20,6 +20,63 @@ Engagements are expected to change the methodology (see `memory/patterns.md`),
 so minor releases are the normal cadence. An entry that says only "ran a box"
 does not belong here — what belongs is what the run *changed*.
 
+## [1.11.0] — 2026-08-14
+
+One single-host run (Kobold), and the entries it produced are mostly about
+*not* spending time. Three of the four unauthenticated CVEs that matched the
+target's pinned version were inert for configuration reasons the advisories
+cannot tell you, and the one that paid never became an exploit at all — it was a
+port scanner. Meanwhile half an hour went into fuzzing a mystery root listener
+that a two-minute elimination pass would have named as containerd. So this
+release is a set of cheap discriminators to run *before* the expensive step.
+
+### Added
+
+- `references/llm-apps.md` — **MCP clients** as a target class, distinct from MCP
+  servers. An inspector/playground/IDE bridge exists to spawn a process from
+  caller-supplied config, so unauthenticated exposure is pre-auth RCE by design.
+  Includes the counter-intuitive success signal: a protocol error
+  (`MCP error -32000: Connection closed`) means your command *ran*, and walking
+  the validation errors from an empty POST is a cheaper way to learn the request
+  schema than reading the client bundle.
+- `references/api.md` — **a talkative SSRF is a loopback port scanner**, with the
+  three response states that make it precise (refused / HTTP status N / parse
+  error naming the first byte). Sweep before you hold any credential; the service
+  it uncovers is often where the foothold lives, while the app hosting the SSRF
+  never gets exploited. Report it even when unexploited.
+- `references/web.md` — **an app's persisted state file inside a writable data
+  directory is code**. Rate limiters and counters that persist as PHP source get
+  `require`d every request; directory write is enough to replace a root-owned
+  `0640` file; the limiter runs *before* body validation; and the app rewrites it
+  after each request, so treat it as one-shot and have the payload write results
+  next to itself for reading through the shared mount.
+- `references/privesc-linux.md` — **UID 0 on a localhost port means "root", not
+  "interesting"**. Eliminate the box's own runtime daemons (containerd, dockerd,
+  docker-proxy — all root, all Go, all in `ps`) before spending a wordlist, and
+  stop treating a non-default 404 body as proof of a bespoke service.
+
+### Changed
+
+- `references/web.md` — vhost fuzzing now says to take the filter from a
+  deliberately-wrong `Host:` first. Many stacks answer an unknown vhost with a
+  **redirect**, so filtering on the correct vhost's body size matches everything;
+  filter the code (`-fc 302`) instead.
+
+### Fixed
+
+- Corrected the recorded fix version for CVE-2026-41651 (PackageKit,
+  "Pack2TheRoot"). The noble fix is **`1.2.8-2ubuntu1.5`**, not `-3ubuntu1.5` —
+  the wrong string would have made a vulnerable host read as patched. Verified
+  against Ubuntu's tracker.
+
+### Published
+
+- [`writeups/kobold.md`](writeups/kobold.md) — Easy / Linux. Unauthenticated
+  MCPJam Inspector RCE (CVE-2026-23744) to `ben`, then PackageKit `InstallFiles`
+  TOCTOU (CVE-2026-41651) to root, driven from `python3-gi` because the target
+  has no compiler. Includes the dead ends in full: the UUID-gated Arcane env
+  proxy, the empty PrivateBin store, and the containerd listener.
+
 ## [1.10.0] — 2026-08-10
 
 Two single-host runs. Both reached root, and both taught the same lesson from
@@ -789,7 +846,9 @@ machines, both Linux (one easy, one medium).
 - Small sample, and no machine has defeated the loop yet — so its failure mode
   is still unobserved.
 
-[Unreleased]: https://github.com/euriconicacio/pwnloop/compare/v1.9.0...HEAD
+[Unreleased]: https://github.com/euriconicacio/pwnloop/compare/v1.11.0...HEAD
+[1.11.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.11.0
+[1.10.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.10.0
 [1.9.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.9.0
 [1.8.3]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.8.3
 [1.8.2]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.8.2

