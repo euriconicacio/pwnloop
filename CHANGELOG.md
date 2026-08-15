@@ -20,6 +20,43 @@ Engagements are expected to change the methodology (see `memory/patterns.md`),
 so minor releases are the normal cadence. An entry that says only "ran a box"
 does not belong here — what belongs is what the run *changed*.
 
+## [1.13.0] — 2026-08-15
+
+Two Linux boxes, both Medium, both about reading rather than reaching for a
+scanner. **VariaType** is a font-processing chain: an exposed `.git` leaks a
+credential, a single-pass `str_replace("../","")` in `download.php` is defeated by
+`....//`, and the arbitrary read names the one `ReadWritePaths=` the service can
+write — which turns a fontTools/FontForge/setuptools sequence of CVEs into root.
+**Interpreter** self-reports Mirth Connect 4.4.0 unauthenticated, and everything
+follows from that one version string: an XStream deserialization RCE
+(CVE-2023-43208), the app's own database password, a PBKDF2 hash that only cracks
+once the cracker's `ab64` encoding is right, a reused SSH password, and a
+root-owned Flask service whose "safe" template runs `eval()` over attacker input
+behind a character allow-list that `os` + `chr()` walk straight through.
+
+### Added
+
+- `references/web.md` — **a path-traversal filter must be probed across depth,
+  not at one depth.** A single-pass `str_replace("../","")` leaves `....//`
+  intact; but the number of `../` needed is the depth of the app's base directory,
+  which you do not know, so one probe at the wrong depth is indistinguishable from
+  a working filter. Sweep the depth for every traversal form before concluding.
+  Plus: `os.path.join(dir, request.files[...].filename)` is a second, independent
+  arbitrary write — Werkzeug does not sanitise the multipart filename unless you
+  call `secure_filename`.
+- `references/privesc-linux.md` — **a root service that `eval()`s filtered input;
+  a character allow-list is not a sandbox.** The reasoning to beat it: find the
+  double-templating sink (`eval(f"f'''{template}'''")`), read the allow-list for
+  what it still permits rather than what it blocks, rebuild every forbidden byte
+  from `chr()` and whatever the eval scope already imports (`os`), and prefer a
+  side-effect payload since the response shows only the function's return value.
+  A specific Flask/`notif.py` pattern is the example of the class, not the recipe.
+
+### Published
+
+- `writeups/variatype.md` — VariaType (Medium, Linux).
+- `writeups/interpreter.md` — Interpreter (Medium, Linux).
+
 ## [1.12.0] — 2026-08-14
 
 Principal, rooted in ~13 minutes, and the entries it produced are all about

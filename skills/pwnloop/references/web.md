@@ -273,3 +273,36 @@ Chain it to reach an admin-only route.
 Whatever the vector, aim for a reverse shell (see `references/foothold.md`) or
 a credential. A web shell is fine as a stepping stone but upgrade quickly —
 interactive access is where enumeration gets fast.
+
+## Sanitiser that runs once
+
+A path filter implemented as a substitution rather than a resolution is bypassed by a payload that
+*reconstructs* the forbidden sequence after one pass:
+
+```php
+$file = str_replace("../", "", $_GET['f']);   // single pass
+```
+
+`....//` → the filter removes the inner `../` → `../` survives. Same shape for `..././`,
+`....\\` on Windows, and for `str_replace` chains that strip `..%2f`. The tell is that the
+endpoint returns a *file-not-found* style error rather than a validation error: it means your input
+reached a filesystem call.
+
+**Sweep the depth, do not test one depth.** The number of `../` needed is the depth of the
+application's base directory, which you do not know. One probe at the wrong depth returns exactly
+the same "not found" as a working filter, and reads as a dead end:
+
+```bash
+for n in $(seq 1 8); do
+  p=$(printf '....//%.0s' $(seq 1 $n))
+  curl -s --path-as-is "$URL?f=${p}etc/passwd" | head -c 40; echo "  <- depth $n"
+done
+```
+
+Do this for every traversal form you try (`../`, `....//`, `..%2f`, `%2e%2e%2f`, `..%252f`) before
+recording the parameter as DEAD — and prefer `--path-as-is`, since curl collapses `..` itself.
+
+Once a read lands, read the *deployment* before anything else: the web-server vhost config (it names
+the document root), the systemd unit (it names the service user and every `ReadWritePaths=` grant),
+and the application source. A blind file-write primitive elsewhere in the estate becomes a targeted
+one the moment you know which single directory the service is permitted to write into.

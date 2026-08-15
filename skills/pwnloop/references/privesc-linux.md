@@ -334,6 +334,48 @@ the host runs a cluster (k3s/kubeadm/microk8s), the container is usually one ste
 of a larger chain — enumerate the SA's RBAC and the kubelet before reaching for a
 local exploit. See `references/kubernetes.md`.
 
+## A root service that evaluates filtered input — a char allow-list is not a sandbox
+
+A common lab privesc is a root-owned local helper (a Flask/socket daemon on
+`127.0.0.1`, a cron consumer, a notification/formatter) that takes attacker
+data and feeds it to a language `eval`/`exec`/template engine, "protected" by an
+input regex. Enumerate them: `ps -eo user,cmd | grep -iE 'python|node|ruby|perl'`
+for root interpreters, `ss -ltnp` for loopback listeners, and read any
+root-run script you can (`/usr/local/bin/*.py`, systemd units). Then read *how*
+it uses your input, not whether it filters it.
+
+The reasoning that beats the filter:
+
+1. **Find the sink.** A double-templating shape is the classic tell —
+   `eval(f"f'''{template}'''")` where `template` already interpolated your field,
+   so a `{...}` in your input survives the first pass as text and is *evaluated*
+   by the second. Same class: `Template(...).render()`, `%`-format with a
+   `__getitem__`, `subprocess(..., shell=True)` on a "sanitised" string.
+2. **Read the allow-list for what it still permits, not what it blocks.** A
+   regex like `^[a-zA-Z0-9._'"(){}=+/]+$` blocks spaces, commas and `;` — which
+   *looks* airtight for command building — but leaves `() {} . + / ' "`. That is
+   enough to call functions and index attributes.
+3. **Rebuild every forbidden byte at runtime.** Whatever the eval scope already
+   imports is yours (`os`, `sys`, `subprocess` — check the file's imports), and
+   built-ins (`chr`, `getattr`, `bytes`) are always in scope. Forbidden chars
+   come from `chr(N)`: space `chr(32)`, `;` `chr(59)`, `,` `chr(44)`. Assemble a
+   shell string with `+`, keeping every literal fragment inside the allow-list:
+   `os.system('cp'+chr(32)+'/bin/bash'+chr(32)+'/tmp/x'+chr(59)+'chmod'+chr(32)+'+s'+chr(32)+'/tmp/x')`.
+   No commas are needed because `chr` and `os.system` are single-argument; if you
+   need multi-arg calls, `exec(<chr-built string>)` sidesteps the comma ban
+   entirely — the real program lives inside the built string, not your literal.
+4. **Satisfy the delivery precondition.** These helpers often gate on
+   `remote_addr == 127.0.0.1` or a Unix socket — you already have a local
+   foothold, so send from the box (raw socket / `python3`, since `curl` may be
+   absent). Prefer a **side-effect** payload (drop a SUID `bash`, write
+   `authorized_keys`) over a reverse shell: the response usually shows only the
+   function's return value (e.g. `os.system`'s exit code `0`), not stdout.
+
+Fix to cite in the report: never evaluate templated data — compute the value and
+interpolate with `.format()`/concatenation, or `str.format_map` over a fixed
+field set. An input allow-list does not contain an interpreter that has `os` in
+scope.
+
 ## Kernel exploits — last resort
 
 Only when enumeration is genuinely exhausted. They crash lab boxes and
