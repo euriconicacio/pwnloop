@@ -370,6 +370,38 @@ A writable module mapped into a home directory = SSH key write.
 - **JBoss/WildFly** → JMX console / `jexboss`. **WebLogic** → T3 and CVE
   deserialization (`10.3`/`12.x`).
 
+## Apache Guacamole — the connection store is a credential vault
+
+Guacamole (`/guacamole/`, often on a Tomcat) is a clientless RDP/SSH/VNC gateway,
+so **every connection it holds embeds the credential to reach that target** — a
+password or a private key (sometimes with its passphrase). Two ways in, and the
+second beats the first:
+
+- **Via the API, with a token.** After any Guacamole login (SSO or local), the
+  connection secrets are readable by anyone with `ADMINISTER` on the connection:
+  `GET /api/session/data/<ds>/connections/<id>/parameters?token=<tok>` returns
+  `private-key`/`password`/`passphrase` in cleartext. `dataSource` is in the
+  `/api/tokens` response (`mysql`, `postgresql`, `saml`, …).
+- **Via the database — this is the real win.** Guacamole stores connections in a
+  SQL backend (JDBC extension); the DB creds sit in the world-readable
+  `/etc/guacamole/guacamole.properties` (`mysql-*`, or `postgresql-*`). The DB
+  holds **cleartext connection parameters for connections your API user cannot
+  see** — the permission model gates the API, not the table:
+  ```sql
+  select connection_id,connection_name,protocol from guacamole_connection;
+  select connection_id,parameter_name,parameter_value from guacamole_connection_parameter;
+  ```
+  A connection to `localhost` as another local user (or root) is a lateral-move /
+  privesc key handed over in plaintext. `guacamole.properties` also reveals the
+  SSO wiring: `saml-username-attribute` (which SAML field becomes the guac
+  username — not always the NameID) and `saml-idp-metadata-url`.
+
+A recovered key that fails to load with `error in libcrypto: unsupported` is a
+*tooling* problem, not a bad key: re-serialise it through Python `cryptography`
+(`load_ssh_private_key`/`load_pem_private_key` → `private_bytes(...)`) to a PEM
+the client accepts. Encrypted PEM keys (`Proc-Type: 4,ENCRYPTED`) use the stored
+passphrase — the guac DB keeps the passphrase right next to the key.
+
 ## Elasticsearch / Kibana / MongoDB / Memcached / CouchDB
 
 ```bash

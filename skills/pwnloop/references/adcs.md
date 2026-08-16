@@ -202,3 +202,35 @@ Delete any computer accounts, officer grants, template edits, and
 `altSecurityIdentities`/`NTAuth` entries you added. Golden certs cannot be
 revoked — note them in the ledger as un-removable and flag the CA-key rotation
 the defender must perform.
+
+## Enumerate AD CS *as each foothold principal* — enrollment is per-identity
+
+`certipy find -vulnerable` reports only templates the **authenticating user can
+enrol in**, because enrolment rights are an ACL on the template. A template that is
+ESC-vulnerable *for a group you are not in* returns nothing — producing a false
+"AD CS is a dead end". So the check is not "did AD CS look vulnerable once"; it is
+**re-run `certipy find -vulnerable -k` as every user you pivot to**, especially
+after landing in a new group. A low-priv user can legitimately see zero vulnerable
+templates while the *next* user (in an IT/ops group) sees a critical one. When you
+only have code-exec as the user (no password/hash), mint a usable TGT with Rubeus
+`tgtdeleg /nowrap` → `ticketConverter` → ccache, and enumerate with that.
+
+## ESC17 (Server-Auth + enrollee-supplies-subject) → impersonate a *service*, not a user
+
+ESC1's cousin: the template lets the requester choose the subject **and** carries the
+Server-Authentication EKU. That is not primarily a user-auth path — it is a licence to
+**mint a TLS server certificate for any hostname**, trusted by anything that validates
+against the domain CA. The escalation is then: find a service the DC (or another host)
+consumes *by name over TLS without pinning*, get write on the AD-integrated DNS zone
+(`CREATE_CHILD` is enough — check `bloodyAD get writable`), point that name at yourself,
+present the ESC17 cert, and MITM the protocol.
+
+The classic sink is **WSUS**: a Windows host configured with `WUServer=https://<name>:8531`
+will install attacker-supplied "updates" as SYSTEM if it trusts your cert. If the WSUS
+name is `NXDOMAIN`, you don't even fight an existing record — just create it. Reasoning
+that transfers: **Server-Auth + name-choice + a DNS write + an unpinned by-name TLS
+client = code execution as whatever consumes that service.** Tooling: `certipy req
+-template <t> -dns <name>`, `bloodyAD add dnsRecord`, and `wsuks --serve-only` for the
+WSUS case (force the client poll with `wuauclt /detectnow`). Do not assume a WSUS box is
+the *server-side* deserialization CVE — a DC is often a WSUS *client*, which is this
+MITM instead.

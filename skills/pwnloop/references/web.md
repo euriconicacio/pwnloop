@@ -64,6 +64,22 @@ pwnloop x "ffuf -u 'http://machine.htb/page.php?FUZZ=test' \
 Source disclosure via the `php://filter` wrapper is the highest-value LFI
 outcome: read `config.php`, `db.php`, `.env` and you usually have credentials.
 
+**LFI → RCE via `pearcmd.php` when PEAR is installed.** If the include reaches an
+absolute/traversed path *and* PHP has `register_argc_argv=On` with PEAR in
+`include_path` (both visible in an exposed `phpinfo.php`), you don't need a log or
+an upload — `pearcmd.php` turns the query string into `argv`. Include
+`.../usr/share/php/PEAR/pearcmd.php` and use its `config-create` to write an
+attacker string into an attacker path, then include that file:
+```
+?+config-create+/&<inc>=../../../../../usr/share/php/PEAR&<ns>=pearcmd&/<?=system($_GET[0])?>+/tmp/x.php
+?<inc>=../../../../../tmp&<ns>=x&0=id            # include the planted stager
+```
+Check `register_argc_argv`, `include_path` and `allow_url_include` in `phpinfo`
+first. **The `<?=`/`<?php` open tag must arrive as literal bytes** — `requests`/
+`curl` percent-encode `<`/`>` and the planted file stays inert; send it with a
+raw socket. This is the delivery for e.g. the Pterodactyl `/locales/locale.json`
+unauth include (CVE-2025-49132), but the class is any PEAR-present PHP LFI.
+
 **Path traversal in the URL *path* (not a parameter) needs `--path-as-is`.**
 When the sink is a static/plugin/asset route — `/public/plugins/<id>/..%2f..` and
 friends — `curl` and most HTTP libraries normalise `..` client-side and send the

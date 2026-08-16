@@ -211,3 +211,61 @@ The class: **when the obvious XML injection is patched, the databinding/attachme
 layer of the same server often reaches files or URLs by a different code path.**
 Pin the version, enumerate that product's CVEs, and read the PoC for *which layer*
 fetches the href.
+
+## SAML SSO: forge the assertion, don't crack the login
+
+When an app authenticates via SAML (a login that 302s to an external IdP with a
+`SAMLResponse` coming back), the trust boundary is the **signature check on the
+Service Provider**, not the password. Two things fall out.
+
+**Enumerate the estate from the IdP, unauthenticated.** An IdP usually publishes
+each provider's SAML metadata without auth — for authentik,
+`/api/v3/providers/saml/{id}/metadata/` (iterate `id`), and its OpenAPI schema
+(`/api/v3/schema/`) lists which routes are `security: []`. The metadata's SSO/ACS
+URLs name every downstream app and often the internal hostname. That maps the
+target better than a wordlist — on one box it named `gitlab` and `guacamole` and
+the vhost before any fuzzing.
+
+**Signature-wrapping (the CVE-2024-45409 class).** A Service Provider using a
+vulnerable SAML library (ruby-saml ≤ 1.16 / ≤ 12.2 — GitLab ≤ 17.3.2/16.x, and
+the same shape appears hand-rolled) can be handed an assertion for *any* identity
+if you possess **one genuinely signed assertion from the IdP**. The reasoning:
+
+1. **Get one legitimate signed assertion.** Log in as *any* low-privilege SSO user
+   (a password leaked elsewhere is enough) and capture your own `SAMLResponse` by
+   driving the SP-initiated flow. Redirect-binding responses are `deflate`+base64 —
+   raw-inflate (`zlib.decompress(data, -15)`) before editing.
+2. **Wrap it.** Move `<ds:Signature>` from the Response into the Assertion, plant a
+   *cloned* `<ds:Reference>` with a recomputed `DigestValue` in a spot the verifier
+   ignores but the XPath still selects (`samlp:StatusDetail`), and change
+   `<saml:NameID>` to the victim. The signature still validates because the original
+   `SignedInfo` is untouched; the SP reads the attacker NameID. The synacktiv
+   `CVE-2024-45409` PoC does exactly this — feed it the decoded XML, `-n <victim>`.
+3. **Know what the SP keys on.** It may be the `NameID` *or* a specific attribute
+   (Guacamole uses `saml-username-attribute`, e.g. `upn`). Read the real assertion
+   to see which field carries the identity, and what value the admin has —
+   frequently just the admin's username (`akadmin`, `administrator`).
+4. **Deliver on the SP's binding.** POST-binding SPs take base64 in a form; some use
+   redirect binding (`SAMLResponse` as a URL query param). Match the ACS metadata.
+
+Fix to cite: patch the SAML library; enforce `WantAssertionsSigned` + strict
+reference/URI validation. The finding is "any SSO user → any identity, including
+admin", which is worth leading a report with.
+
+## Identity provider as a superuser pivot (authentik/Keycloak)
+
+Owning the IdP owns every app in front of it. An **authentik API token for a
+superuser** (they leak into CI variables, `.env`, `EnvironmentFile`s — always
+grep for one after any admin foothold) is `Authorization: Bearer <tok>` against
+`/api/v3/`, and superuser can **reset any user's password**
+(`POST /api/v3/core/users/<pk>/set_password/`). So the move is: set a normal
+user's password → log in as them → SSO into whichever downstream app *that user*
+has access to, and inherit their data there (stored connections, repos, secrets).
+You never need the downstream app's own admin. Same logic for Keycloak admin REST.
+The authentik login flow is a scriptable JSON state machine
+(`/api/v3/flows/executor/<slug>/?query=`: GET, then POST
+`{"component":"ak-stage-identification","uid_field":<user>}`, then
+`{"component":"ak-stage-password","password":<pw>}` — carry the `authentik_csrf`
+cookie as `X-authentik-CSRF`), and its fabricated-pending-user avatar is a
+username-existence oracle (a real user's initials differ from the two characters
+you submitted).

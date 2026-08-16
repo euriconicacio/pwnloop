@@ -53,6 +53,15 @@ sudo less /etc/profile      # then !/bin/sh
 `env_keep+=LD_PRELOAD` present → compile a shared object with a `_init` that
 spawns a shell, then `sudo LD_PRELOAD=/tmp/x.so <anything>`. `LD_LIBRARY_PATH`
 kept works the same way with a fake `libc`.
+
+**On openSUSE, `(ALL) ALL` + `Defaults targetpw` is the distro default, not a
+grant.** It means *any* user may run anything — **after supplying the target
+(root) password**, which you do not have. Do not read it as "already won"; read it
+as "the escalation is elsewhere, or root's password is recoverable." Corollary:
+an admin-looking account you're tempted to crack toward may be a **decoy** — a
+locked account (`!`/`*` in `/etc/shadow`) cannot log in at all, so a slow bcrypt
+for it is never the intended step. If a hash is too slow to be crackable in the
+time the box implies, re-examine the premise before burning hours on it.
 Wildcards in a sudo rule (`sudo /bin/tar -czf /tmp/x /var/www/*`) → checkpoint
 injection or filename-as-argument tricks.
 
@@ -375,6 +384,90 @@ Fix to cite in the report: never evaluate templated data — compute the value a
 interpolate with `.format()`/concatenation, or `str.format_map` over a fixed
 field set. An input allow-list does not contain an interpreter that has `os` in
 scope.
+
+## A local daemon that mounts/handles attacker media as root (udisks/polkit class)
+
+A privileged D-Bus service that acts on a device or filesystem *you* supply is a
+root primitive whenever the polkit action is reachable by your session. The
+transferable reasoning:
+
+1. **What is your polkit context?** Actions gated `allow_active` need an *active*
+   session. Read it with `gdbus call --system --dest org.freedesktop.login1
+   --object-path /org/freedesktop/login1 --method
+   org.freedesktop.login1.Manager.CanReboot` (`yes` = active, `challenge` = not).
+   A remote SSH session is usually not active — **but a PAM/login misconfig can be
+   coerced into one.** On openSUSE, dropping `~/.pam_environment` with
+   `XDG_SEAT OVERRIDE=seat0` / `XDG_VTNR OVERRIDE=1` makes `pam_systemd` register
+   the *next* login as seat0/vt1 = physically present (CVE-2025-6018). Reconnect,
+   re-check `CanReboot`.
+2. **What does the daemon do with your input as root?** udisks `Filesystem.Resize`
+   mounts your image **as root without `nosuid`** for the duration of the resize
+   (CVE-2025-6019, udisks2/libblockdev). Anything it mounts, formats, or executes
+   on your behalf is the sink.
+3. **Plant a root-owned setuid binary on the medium and race the window.**
+   `udisksctl loop-setup --file img` then trigger the resize; a tight loop execs
+   `<mountpoint>/xpl -p` while it is briefly mounted.
+
+Building the image needs care and is where most attempts fail:
+- The suid binary must be **root-owned at creation time** — you need root on the
+  build host. No loop-mount available? `mkfs.xfs -p <protofile>` bakes a
+  `uid=0`, mode-`04755` inode with no mount (`xpl -u-755 0 0 /path/to/bash`);
+  verify with `xfs_db -c 'inode N' -c 'print core.mode core.uid'`.
+- Use the **target's own** `bash` (glibc/ABI match), not the container's.
+- **XFS refuses a duplicate-UUID mount** — a leftover mount from a prior run pins
+  the UUID and every fresh loop of the *same* image then fails to mount
+  ("wrong fs type, bad superblock") and the race silently never wins. Rebuild so
+  `mkfs.xfs` assigns a new UUID.
+- Cleanup gotcha: a suid `bash -p` has euid 0 but **ruid ≠ 0**, and util-linux
+  `umount` refuses ("must be superuser"); `setuid(0)` first (one-line python).
+
+**The pointer to this class is often left in plain sight** — read `/var/spool/mail/*`
+and MOTD/notice files. A "security notice about unusual `udisksd`/`<daemon>`
+activity" is the box telling you which local service to attack.
+
+## Unprivileged user namespaces as a local-root primitive (OverlayFS / FUSE class)
+
+Distinct from a memory-corruption kernel bug: this class is a *logic* flaw
+reachable by any user who can create a user namespace, so treat it before the
+"last resort" section below. The lever is that inside a userns you are UID 0 and
+can `mount` filesystems, and several of those mounts mishandle ownership or
+setuid bits. **Enumerate the preconditions first — they are cheap and they tell
+you whether the whole class is even on the table:**
+
+```bash
+cat /proc/sys/user/max_user_namespaces          # >0 → unprivileged userns allowed
+sysctl kernel.apparmor_restrict_unprivileged_userns 2>/dev/null   # missing/0 → not restricted
+ls -l /dev/fuse; which fusermount fusermount3    # FUSE reachable?
+ls /usr/include/fuse* ; which gcc                # can the PoC build ON the box?
+uname -r                                         # pin the exact kernel, then hunt the CVE
+```
+
+The recurring bug is a **SUID copy-up**: OverlayFS copies a file up from its
+`lowerdir` into the `upperdir` without checking that the file's owner is mapped
+in the caller's namespace, so a **root-owned setuid** file served from a
+*lower* layer becomes a genuine root-setuid binary in the upper layer. Serving
+that lower file from a **FUSE** mount is what lets an unprivileged user present a
+`root:root` mode-`4755` inode in the first place. The 2023-era instance is
+CVE-2023-0386 (kernels < 6.2, mainline 5.15.x included) — as method:
+
+1. FUSE server exposes one file as `-rwsrwxrwx root:root`
+   (`./fuse ./lower ./payload`).
+2. In a `CLONE_NEWUSER|CLONE_NEWNS` child, map `0 <uid> 1`, `mount -t overlay`
+   with `lowerdir=<fuse>`, and touch a file in `merge/` to force the copy-up.
+3. `./upper/<file>` is now real-root SUID — exec it (make the payload a shell or
+   a reverse-shell stub for a non-interactive run).
+
+Because the preconditions include `gcc` + `libfuse-dev` here, **build on the
+target** (glibc/ABI match) rather than fighting a cross-compile from the
+container. The public PoC is a compact `make all`; read its `exp.c` so you know
+which step is the copy-up. Keep the exact CVE/version in `local.md`, not here —
+what transfers is *pin the kernel, check userns+FUSE are open, look for a
+mount-side ownership/setuid mishandle*.
+
+**The pointer to this class, too, is often in plain sight** — the same
+`/var/spool/mail/*` / MOTD read from the udisks section applies: a notice naming
+"OverlayFS / FUSE" or "kernel CVEs this year" is the box telling you to pin the
+kernel and hunt this class.
 
 ## Kernel exploits — last resort
 

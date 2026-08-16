@@ -20,6 +20,41 @@ Engagements are expected to change the methodology (see `memory/patterns.md`),
 so minor releases are the normal cadence. An entry that says only "ran a box"
 does not belong here — what belongs is what the run *changed*.
 
+## [1.14.0] — 2026-08-16
+
+Five write-ups published (Data, 2Million, Pterodactyl, CCTV, Logging) plus a
+methodology expansion from the runs behind them; the rooted-machines count moves
+21 → 27 (`darkzeroreturns` is rooted but not retired — it counts, but never gets a
+write-up while active). The through-line this cycle is **read the environment's own
+hints, and enumerate as the principal you actually are**: Pterodactyl's `/changelog.txt`
+and a MOTD "security notice" name the exact PEAR-LFI and udisks/PAM local-root chain;
+Logging is a full AD path whose privesc was only visible once AD CS was enumerated
+*as the foothold user* — a low-priv identity legitimately sees zero vulnerable
+templates while the next user in an ops group sees a critical one.
+
+### Added
+
+- `references/adcs.md` — **enumerate AD CS as each principal you pivot to; ESC17 is a
+  service-impersonation primitive.** Template enrollment is a per-identity ACL, so
+  `certipy find -vulnerable` run as the wrong user yields a false "AD CS dead end" —
+  re-run it as every user you land as (mint a TGT with Rubeus `tgtdeleg` when you only
+  have code-exec). ESC17 (Server-Auth + enrollee-supplies-subject) plus a DNS write and
+  an unpinned by-name TLS client (classically **WSUS**, where a DC is a *client*, not the
+  deserialization server) = code execution as whatever consumes that service.
+- `references/web.md` — **LFI→RCE via `pearcmd.php`** when PEAR is present and
+  `register_argc_argv=On`: the query string becomes `argv`, `config-create` plants a
+  stager, and the `<?=` open tag must arrive as literal bytes (send it over a raw socket).
+- `references/privesc-linux.md` — the **unprivileged-userns / FUSE-OverlayFS SUID
+  copy-up** class and the **udisks/polkit `allow_active`** local-root class, both often
+  signposted by a `/var/spool/mail` or MOTD "security notice".
+- `references/services.md`, `references/api.md` — Guacamole connection-store credential
+  recovery, and the SAML signature-wrapping / IdP-as-superuser-pivot patterns.
+
+### Published
+
+- `writeups/{data,2million,pterodactyl,cctv,logging}.md` — flags redacted, addresses
+  generalised, retired targets only.
+
 ## [1.13.0] — 2026-08-15
 
 Two Linux boxes, both Medium, both about reading rather than reaching for a
