@@ -1,6 +1,6 @@
 # Data — Hack The Box (retired)
 
-**Linux**
+**Easy · Linux**
 
 *Flag values redacted; target/VPN addresses generalised.*
 

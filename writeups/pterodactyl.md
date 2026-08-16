@@ -1,6 +1,6 @@
 # Pterodactyl — Hack The Box (retired)
 
-**Linux**
+**Medium · Linux**
 
 *Flag values redacted; target/VPN addresses generalised.*
 

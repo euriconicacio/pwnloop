@@ -20,6 +20,12 @@ Engagements are expected to change the methodology (see `memory/patterns.md`),
 so minor releases are the normal cadence. An entry that says only "ran a box"
 does not belong here — what belongs is what the run *changed*.
 
+## [1.14.1] — 2026-08-16
+
+Corrections. Set the confirmed difficulties on the write-ups published in 1.14.0:
+Data **Easy**, 2Million **Easy**, Pterodactyl **Medium**, CCTV **Easy** (Logging was
+already Medium) — in both the write-up headers and the `writeups/README.md` table.
+
 ## [1.14.0] — 2026-08-16
 
 Five write-ups published (Data, 2Million, Pterodactyl, CCTV, Logging) plus a
