@@ -322,3 +322,57 @@ Once a read lands, read the *deployment* before anything else: the web-server vh
 the document root), the systemd unit (it names the service user and every `ReadWritePaths=` grant),
 and the application source. A blind file-write primitive elsewhere in the estate becomes a targeted
 one the moment you know which single directory the service is permitted to write into.
+
+## User input written into a server-side script that is later executed
+
+A whole class of app RCE: the server stores request-controlled input into a file it
+*re-parses or executes* on a later request — a Lua/PHP session file, a config it
+`include`s/`dofile`s, a rate-limiter counter, a template. If you can break out of the
+string context the value is stored in, you inject code that runs with the app's
+privileges on the next request. Look for it whenever a value you supply reappears in
+a stored server-side artifact.
+
+Two things make it exploitable and are worth probing directly:
+
+- **A validation-vs-sink desync, classically via a NUL byte.** The check that
+  approves your request truncates the input (C-string semantics) while the code that
+  *stores* it uses the full bytes. So `anonymous\x00<payload>` passes an
+  "is this an allowed user?" check as `anonymous`, but the whole string — payload
+  included — lands in the session/state file. *(Wing FTP ≤7.4.4, CVE-2025-47812: the
+  username after a `%00` breaks out of a Lua `[[ ]]` long-string with `]]`, injects
+  `io.popen(...)`, and executes when the `UID`-cookie'd session is next loaded via
+  `/dir.html`.)*
+- **A synchronous execution oracle beats a reverse shell here.** If the injected
+  language can read command output (`io.popen`/`os.capture`, PHP `shell_exec` echoed
+  into the response), pull output back in the HTTP response instead of catching a
+  shell — no listener, survives egress filtering, and is far easier to script. When
+  you inject a raw command, base64-wrap it and URL-encode the inner string: a bare
+  `&` splits the POST body and base64's own `+` decodes to a space.
+
+Pin the product version (a login-page footer, `Server:` header, a `/version`
+endpoint) and hunt the CVE + PoC for the *mechanism* before hand-rolling. Keep the
+per-product payload in `local.md`; the transferable rule is **"stored input that is
+later executed + a check/sink desync = RCE."**
+
+## An arbitrary-file-read runs as the app user — read the app user's own secrets
+
+When a web bug gives file read (LFI, path traversal, an S3/uploader traversal like
+CamaleonCMS CVE-2026-1776's `download_private_file?file=..`), remember the read
+executes with the **web process's identity**. Two high-value moves before anything exotic:
+
+- **Find who that is:** read `/etc/systemd/system/<app>.service` (or the nginx/puma
+  config) for `User=` and `WorkingDirectory=`. `/proc/self/cwd/...` reaches the app
+  root even when you don't know the absolute path. (Note: procfs *content* like
+  `/proc/self/environ|status` often reads back empty through an uploader-style read
+  that stats size first — files reporting size 0 return nothing.)
+- **If the app runs as a real login user, a READ bug is a shell.** Read that user's
+  own `~/.ssh/id_*` (0600 is fine — you *are* them), crack the passphrase
+  (`ssh2john`+rockyou) and SSH in. No RCE required. If it runs as `www-data`/a
+  service account, pivot instead to `config/master.key` (+`credentials.yml.enc` →
+  `secret_key_base`), `database.yml`, the app DB, and world-readable flags.
+
+Framework note: a Rails `_*_session` cookie that decrypts (with a leaked
+`secret_key_base`) to no user id means auth lives elsewhere — e.g. CamaleonCMS's
+plain `auth_token` cookie bound to client IP (`<db-auth_token>&M&<ip>`), replayable
+straight from the DB you just read. It authenticates GETs, but Rails CSRF still
+blocks POST/DELETE without a full session.

@@ -458,6 +458,7 @@ Read these on demand, not upfront:
 - `references/source-review.md` — reading recovered source: secrets, sinks, authorization gaps
 - `references/cracking.md` — hash identification, john/hashcat formats, spraying strategy
 - `references/services.md` — per-port playbooks (SMB, FTP, SSH, DNS, SNMP, LDAP, SQL, Redis, RPC, WinRM, SMTP, rsync, RMI/JDWP, app servers, NoSQL, IPMI/VNC)
+- `references/wireless.md` — 802.11 as a pivot: WPA2-PSK crack + traffic decryption, WPA-Enterprise evil twin + stolen RADIUS key, PEAP identity oracle, hostapd/eaphammer
 - `references/binary.md` — custom network services and SUID binaries: triage, command-injection handlers, stack overflow, ret2libc/ROP, format string
 - `references/foothold.md` — reverse shells, TTY upgrade, file transfer both ways
 - `references/evasion.md` — getting past AMSI, Constrained Language Mode, AppLocker/WDAC, Defender on a lab box

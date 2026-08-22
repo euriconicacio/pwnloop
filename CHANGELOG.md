@@ -20,6 +20,28 @@ Engagements are expected to change the methodology (see `memory/patterns.md`),
 so minor releases are the normal cadence. An entry that says only "ran a box"
 does not belong here — what belongs is what the run *changed*.
 
+## [1.15.0] — 2026-08-22
+
+Three write-ups published (**WingData** Easy, **AirTouch** Medium, **Facts** Easy)
+and the methodology grew from the runs behind them; the rooted-machines count moves
+27 → 30. New shared reference **`references/wireless.md`** (there was no 802.11
+coverage at all): WPA2-PSK crack *and* traffic decryption, WPA-Enterprise evil-twin
+with a stolen RADIUS key, the PEAP inner-identity oracle, and the hostapd/eaphammer
+operational traps — AirTouch is the first box here whose entire pivot medium is a
+simulated radio. `references/web.md` gains two classes — stored-input-that-is-later-
+executed (+ a validation/sink null-byte desync, e.g. Wing FTP CVE-2025-47812) and
+"an arbitrary file *read* runs as the app user, so read the app user's own secrets"
+(the service unit names `User=`; if it's a login user, a read bug is a shell).
+`references/privesc-linux.md` gains two more — a root job that extracts an attacker-
+influenced archive (`tarfile.extractall(filter="data")` is only as safe as the
+interpreter: CVE-2025-4517 PATH_MAX filter bypass), and `sudo`-ing a tool that loads
+user-supplied code (Puppet `facter` runs in-process Ruby as root even though it drops
+privileges for shelled-out commands). The through-line this cycle is **pin the exact
+version and check the interpreter/library under a control, not just the control**:
+Wing FTP 7.4.3, CamaleonCMS ≤ 2.9.1, a `filter="data"` extractor running on an
+unpatched Python 3.12.3, and a hardened-looking captcha/registration that OCR walks
+straight through.
+
 ## [1.14.1] — 2026-08-16
 
 Corrections. Set the confirmed difficulties on the write-ups published in 1.14.0:

