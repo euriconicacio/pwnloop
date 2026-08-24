@@ -27,8 +27,17 @@ Getting the format wrong wastes the whole run. Common shapes:
 | `$office$` / `$zip2$` | Office / ZIP archive | `office` / `zip` | 9600 / 13600 |
 | `$DCC2$` / `$mscash2` | domain cached creds | `mscash2` | 2100 |
 | `$krb5pa$23$` | Kerberos preauth (etype 23) | `krb5pa-md5` | 7500 |
-| `user:::hash:::` (NetNTLMv1) | NetNTLMv1 | `netntlm` | 5500 |
+| `user:::hash:::` (NetNTLMv1) | NetNTLMv1 | `netntlm` | 5500 |  <!-- v1 → NT hash via DES regardless of pw strength — but see note -->
+<!-- Method: a NetNTLMv1 cracks to the NT hash via DES no matter how strong the
+     password, so a forced-v1 downgrade is the classic escape for an uncrackable
+     service-account NetNTLMv2. It only works if the target will *send* v1:
+     modern Windows (2019+/2025) refuses. If `responder --lm --disable-ess`
+     yields only a TCP handshake with no NTLMSSP type-3 from the coerced host,
+     the client aborted rather than downgrade — you will only ever get v2, so do
+     not plan around the DES shortcut on a new OS. -->
+
 | `pbkdf2_sha256$` | Django | `django` | 10000 |
+| `pbkdf2:sha256:<i>$` | Werkzeug / Flask | (reformat → hashcat) | 10900 |
 | `$pdf$` / `$racf$` | PDF / mainframe | `pdf` / `racf` | 10500 / 8500 |
 | `$mysqlna$` / `*XXXX` | MySQL 4.1+ | `mysql-sha1` | 300 |
 | 32 hex, no salt, uppercase | LM (legacy) | `lm` | 3000 |
@@ -92,6 +101,14 @@ john --format=PBKDF2-HMAC-SHA256 --wordlist=rockyou.txt hashes
 *(Example of the class: Grafana's `user` table stores PBKDF2-HMAC-SHA256,
 10000 iterations, 50-byte digest as hex, with the per-user salt in the adjacent
 `salt` column.)*
+
+**Before the john-reformat dance, check whether hashcat has a native mode for the
+framework's own wrapper string** — many do, and it skips the encoding pitfalls.
+The wrapper is a self-describing `iter$salt$digest` string; strip it to the parts
+hashcat wants and pick the mode. The method is always: identify the wrapper →
+strip to `iterations / salt / digest` → feed the matching mode (e.g. a
+`pbkdf2:sha256:<iter>$<salt>$<hex>` framework hash is raw PBKDF2-HMAC-SHA256 →
+mode 10900 after re-encoding to `sha256:<iter>:<b64 salt>:<b64 raw-digest>`).
 
 A sound KDF is not a strong password. A 10k-iteration PBKDF2 hash of a top-1 %
 wordlist entry falls in well under a minute on CPU — so run the wordlist before

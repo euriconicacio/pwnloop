@@ -14,6 +14,22 @@ pwnloop x "nmap -p88 --script krb5-enum-users --script-args krb5-enum-users.real
 works when SMB/LDAP/RID enumeration are all refused (pre-auth answers before
 authorization). It is built into the container (`/usr/local/bin/kerbrute`).
 
+**When you enumerate users, pull every group's `member` attribute too — not just
+`(objectClass=user)`.** An account whose own user object is hidden from your read
+ACL is still named by DN inside the groups it belongs to, so a plain user list can
+omit the very account that is the foothold. Query groups explicitly and harvest
+their members:
+
+```bash
+pwnloop x "nxc ldap $T -u <u> -p <p> --query '(objectClass=group)' 'member'"
+# anonymous/null bind often still returns group membership even when user reads are denied
+```
+
+A validated credential that reports `PASSWORD_MUST_CHANGE`/`STATUS_PASSWORD_EXPIRED`
+is a **live** account, not a dead one — reset it over SAMR
+(`nxc smb $T -u <u> -p <old> --change-password <new>`, or impacket
+`smbpasswd`/`changepasswd`) and carry on.
+
 ```bash
 # validate/enumerate a username list against the KDC (valid user vs unknown)
 pwnloop x "kerbrute userenum -d machine.htb --dc $T /usr/share/seclists/Usernames/xato-net-10-million-usernames-dup.txt -o /engagements/$NAME/loot/kerb-users.txt"
@@ -305,3 +321,42 @@ account you created:
 Set-ADComputer -Identity <DC> -Clear msDS-AllowedToActOnBehalfOfOtherIdentity
 Remove-ADComputer -Identity <pc> -Confirm:$false
 ```
+
+## A new OS/functional level ships new object classes — treat them as new primitives
+
+When you land on a **bleeding-edge domain** (a functional level newer than the
+techniques you reach for by reflex), the standard escalation graph is not the
+whole picture: each new level adds object classes and attributes that most
+tooling — BloodHound included — does not yet score, so a fresh privilege primitive
+can sit unflagged. The method, whenever the DC is newer than you expect:
+
+1. **Read the functional level first** — it gates which primitives even exist.
+
+   ```
+   Get-ADDomain | Select DomainMode ; Get-ADForest | Select ForestMode
+   ```
+
+2. **Ask who can *create or write the new object types*, not just who has the
+   classic edges.** A right to create a child object in an OU (`CreateChild` for a
+   specific new class, or a broad `GenericAll`/`CreateChild` over an OU) is rarely
+   treated as privileged, so enumerate it explicitly instead of assuming you lack
+   it. Prefer a purpose-built checker over a generic collector that predates the
+   feature.
+
+3. **Reason about what the new object is *trusted* to assert.** New migration/
+   delegation features often make the KDC copy another principal's authorization
+   context onto the new object; if that link is never validated, creating the
+   object is impersonation.
+
+*Current worked example (fill the pattern, don't memorise the box):* on a
+**Windows 2025** functional level, delegated Managed Service Accounts (dMSA) are
+that primitive — "Bad Successor". A dMSA whose predecessor-link points at a target
+account, with migration marked complete, gets a TGT carrying the **target's** keys
+and group SIDs. Enumerate with `nxc ldap $T -M badsuccessor` (or Akamai's
+`Get-BadSuccessorOUPermissions.ps1`), exploit with `bloodyAD ... add badSuccessor
+<name> --ou '<OU-DN>'`, then read the target keys from the ticket's "previous
+keys" → PtH/DCSync. If a write to the *victim* object fails with
+`insufficientAccessRights`, the tool is writing back-reference attributes you have
+no rights for — switch to the mode that writes only the object you own
+(bloodyAD's `--prepatch`). Delete every object you create as cleanup
+(`remove object "CN=<name>,<OU-DN>"`).

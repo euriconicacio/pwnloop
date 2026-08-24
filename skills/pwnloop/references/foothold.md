@@ -153,6 +153,28 @@ cat ~/user.txt        # linux
 type C:\Users\<u>\Desktop\user.txt   # windows
 ```
 
+## A callback that never came — triage before you re-fire
+
+Rewriting or re-firing a payload before you know *why* it stayed quiet wastes the
+most time in a foothold. "No shell" has four distinct causes that each masquerade
+as "the exploit failed" — separate them first:
+
+- **Wrong sink** — the payload never reached the vulnerable field. A synchronous
+  timing oracle (`sleep 8` inline) that *does* delay proves the sink; if it
+  doesn't, stop fixing the shell and fix delivery.
+- **Blocked egress** — exec works but the callback can't leave. The timing oracle
+  fires but no connection lands; switch to an out-of-band channel you *can* reach
+  (see "When outbound is filtered") or an in-band output oracle.
+- **Local-vs-remote evaluation** — your own container ran the payload. A
+  `$(...)`/backtick that resolved before leaving your shell fakes a success (a
+  local `sleep`/callback). Hold command-substitution in a single-quoted variable
+  so it reaches the target verbatim.
+- **Wrong plumbing on your side** — the shell landed and you read the wrong file.
+  A backgrounded `nc -lvnp` with your own `>` redirect does **not** write to the
+  harness task-output file. Before blaming the payload, confirm the listener is
+  actually bound (`ss -ltnp`) and `cat` the exact path its stdout was redirected
+  to.
+
 ## When a capture tool logs nothing
 
 `impacket-smbserver` and `responder` can capture a NetNTLMv2 correctly while

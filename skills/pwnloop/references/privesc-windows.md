@@ -80,6 +80,44 @@ a co-located `hostfxr.dll` over the shared runtime, so your `DllMain` runs as th
 exe's account when the service starts. Works whenever you have write into the
 apphost's directory; self-delete the DLL after firing.
 
+## A local (or localhost-only) service that runs input is the privesc — read its interface
+
+A custom service listening on `127.0.0.1`/`[::]` that a low-priv user can reach
+(directly, or from a foothold shell on the same host) is a prime SYSTEM lever —
+`netstat -ano | findstr LISTENING` after any Windows foothold, and map each PID to
+its process. If you already have the binary (an SMB share, the install dir),
+**read its request handler before fuzzing**: the vulnerability is usually that it
+builds a command/script from a caller-supplied field.
+
+The recurring sink in .NET services is **`PowerShell`/`Pipeline.AddScript(base +
+input)`** — `AddScript` runs the whole *string* as a script, so any input
+concatenated into it is code, not an argument. In IL the tell is
+`String::Concat(...)` feeding `AddScript`. A WCF/basicHttpBinding service makes
+this reachable over SOAP:
+
+```bash
+# 1. WSDL names the ops + SOAPAction (httpGetEnabled services expose ?wsdl)
+curl -s "http://host:PORT/Svc?wsdl"
+# 2. break out of the intended command; comment out any trailing suffix the app appends
+#    op(processName) -> "Stop-Process -Name " + processName + " -Force"
+#    processName = 'nope -Force; <your-cmd> ;#'
+```
+
+The SOAP envelope (namespace + SOAPAction from the WSDL):
+
+```xml
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">
+ <soapenv:Body><tem:OpName><tem:argName>nope -Force; whoami ;#</tem:argName></tem:OpName></soapenv:Body>
+</soapenv:Envelope>
+```
+
+POST it with `SOAPAction: http://tempuri.org/<Iface>/<OpName>`. If the op returns
+a string, the pipeline output comes back inline — a **synchronous oracle**, no
+reverse shell or egress needed. If the service runs as LocalSystem (common for a
+"monitoring"/"maintenance" daemon), this is straight low-priv → SYSTEM. Same class
+applies to any `cmd /c`, `Process.Start("cmd", ...)`, `ScriptBlock.Create`, or
+SQL-in-a-string sink built from a request field.
+
 ## Credentials on disk
 
 **First command after any Windows foothold: list the root of the system drive.**

@@ -41,6 +41,23 @@ cat ~/.bash_history; cat ~/.ssh/id_*
 find / -name '*.kdbx' -o -name '.env' -o -name 'config.php' -o -name 'wp-config.php' 2>/dev/null
 ```
 
+**After an RCE as a service account, loot the app's OWN install tree *first* —
+before tunnelling into the product's exotic features.** A generic secret grep is
+too narrow to catch key material and backups (a private key body doesn't match
+`password`, and a `.bak` isn't a config name), so run a filename sweep of the
+install directory as an explicit first move:
+
+```bash
+APPDIR=/opt/<product>   # or the WorkingDirectory= from the systemd unit
+find "$APPDIR" / -maxdepth 6 \( -iname '*.bak' -o -iname 'id_*' -o -iname '*.pem' \
+  -o -iname '*.key' -o -iname 'authorized_keys' -o -iname '*.kdbx' \) 2>/dev/null
+grep -rlaE 'PRIVATE KEY|BEGIN OPENSSH' "$APPDIR" 2>/dev/null
+```
+
+A `support-bundles/`, `backups/`, `snapshots/` or `diag/` directory under a product
+install is a credential drop by design — another user's SSH key or a reused DB
+password sitting there is faster than any exploit the product ships.
+
 ## sudo -l
 
 The single highest-yield check. Any allowed binary → look it up on GTFOBins:
@@ -385,6 +402,51 @@ interpolate with `.format()`/concatenation, or `str.format_map` over a fixed
 field set. An input allow-list does not contain an interpreter that has `os` in
 scope.
 
+## A root "sandbox" that runs your code — attack the sandbox's own config, not just its function ban
+
+A stronger variant of the above: a root daemon runs your submitted code inside a
+*real* interpreter sandbox — PHP `disable_functions` + `open_basedir`, a Python
+`RestrictedPython`, a seccomp/`unshare` jail — and returns errors, so exec is
+genuinely blocked. Do not stop at "functions disabled". Enumerate the daemon
+(`ps -eo user,cmd`, `ss -lxp`/`ss -ltnp` for its socket, pull the binary and
+`strings` it), then read *how the sandbox is configured* and *which non-exec
+capabilities survive*.
+
+1. **Get an output oracle first.** Make the code throw (`throw new Exception(...)`,
+   raise) and read the returned error — it usually reflects the message. Use it to
+   dump the real environment: uid (often 0), the active `open_basedir`, whether
+   `FFI`/`putenv`/`mail`/`file_put_contents`/`copy`/`readfile` are still callable.
+   Confirm you are the privileged uid before investing.
+2. **The self-writable policy file is the bug.** If the config that *defines* the
+   restrictions (`php.ini` with `disable_functions`, an `EnvironmentFile`, the
+   allow-list source) is owned by the runner's uid **and sits inside its own
+   `open_basedir`**, and a file-write primitive is not disabled
+   (`file_put_contents`, `copy`, `rename`, `fwrite`), the sandboxed root process
+   can rewrite the rules for the *next* invocation: submission 1 `copy()`s a
+   backup then blanks `disable_functions`/`open_basedir`; submission 2 calls
+   `system()` as root. `ini_set` being disabled does not save it — the file write
+   does the same job, and `ini_restore('open_basedir')` won't help if the master
+   value is equally restrictive.
+3. **Otherwise reach exec without the exec functions.** `putenv("LD_PRELOAD=…")`
+   + `mail()`/`error_log($m,1,…)` runs the mailer (or the `/bin/sh` `popen`s at
+   the C level) with your preload — write the `.so` somewhere the loader can read
+   (open_basedir does not gate the LD_PRELOAD path; write it *inside* open_basedir
+   if file writes are constrained). `FFI` if enabled is instant. A `readfile`
+   left enabled reads any file the open_basedir permits.
+4. **Delivery is per-principal.** The socket is typically `root:<grp> 0660`
+   (`SO_PEERCRED`), so you must first be in that group — usually the box's "user"
+   account, reached by an earlier step. Use a side-effect payload (SUID bash,
+   sudoers drop-in); the response is accept/reject or an error string, not stdout.
+
+Fix to cite: run the validator as an unprivileged dedicated user in a locked-down
+namespace; keep its policy file **outside** `open_basedir` and read-only to the
+runner; disable the file-write and process-spawn helpers too
+(`file_put_contents`/`copy`/`putenv`/`mail`); and prefer a non-executable
+constraint DSL over running untrusted code at all. Cleanup note: **if you rewrite
+the policy file, restore it from your backup** — a blanked `disable_functions`
+left behind weakens the box for the next user (the lab's periodic reset may also
+revert `/opt/<svc>`, but do not rely on it).
+
 ## A local daemon that mounts/handles attacker media as root (udisks/polkit class)
 
 A privileged D-Bus service that acts on a device or filesystem *you* supply is a
@@ -556,3 +618,53 @@ cat /root/root.txt
 ```
 Write the escalation vector and its evidence file into FINDINGS.md before
 moving on to the report.
+
+## Interpreter cache directories on a sudo-able script's import path
+
+A `sudo` rule pointing at an interpreted script makes every directory the
+interpreter loads code from part of the trust boundary — not just the script.
+Reviewers routinely lock down the `.py`/`.rb`/`.js` files and leave the cache
+directory beside them world-writable, which is the same grant.
+
+For Python, `sys.path[0]` is the script's own directory (unless it is run with
+`-P`), so the check is one `ls`:
+
+```bash
+sudo -l                                  # note any interpreted target
+d=$(dirname <script>); ls -ld "$d" "$d"/__pycache__ "$d"/*.py
+python3 -c 'import sys; print(sys.path)'  # every entry is in scope
+```
+
+Writable `__pycache__` is enough on its own. The usual objection — "Python
+revalidates cached bytecode against the source, so a planted `.pyc` is
+recompiled" — is true only for the *default* timestamp mode. **PEP 552
+hash-based bytecode carries a flags word, and with the `unchecked` bit set the
+interpreter performs no validation at all**: no mtime comparison, no size
+comparison, no hash of the source. The source file is never read.
+
+```python
+import py_compile
+py_compile.compile('/tmp/evil.py',
+    cfile='<dir>/__pycache__/<module>.cpython-3XY.pyc',
+    dfile='<module>.py',
+    invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH)
+```
+
+Header tell — magic, then `flags == 1`:
+
+```
+00000000: cb0d 0d0a 0100 0000 ...      # 3.12; flags&0b11 == 0b01 -> hash, unchecked
+```
+
+Do the privileged work at **module scope** (it runs at import, before the
+caller's own logic) and keep working stubs for every name the caller imports, so
+the tool still completes and nothing looks broken. Match the interpreter's exact
+minor version in the filename (`cpython-312`) — compile on the target if the
+attack host differs.
+
+Same class elsewhere: writable `.rb` load paths / `RUBYLIB`, `node_modules` and
+`NODE_PATH` beside a sudo-able Node script, a writable `__init__.py` in a
+package the tool imports, a `sitecustomize.py` on the path. Mitigations to
+recommend: `chmod 755` + root ownership on the cache directory, and run
+root-invoked Python with `-B` (no bytecode cache) or `-P` (do not prepend the
+script directory to `sys.path`).

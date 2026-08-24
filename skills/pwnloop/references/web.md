@@ -318,6 +318,22 @@ done
 Do this for every traversal form you try (`../`, `....//`, `..%2f`, `%2e%2e%2f`, `..%252f`) before
 recording the parameter as DEAD — and prefer `--path-as-is`, since curl collapses `..` itself.
 
+**Discipline for any blind probing sweep** (path brute force, a writability/existence oracle, a
+traversal fuzz) — the sweep's own defects fake negative results:
+
+- **Distinguish "no" from "no answer".** If the oracle rides a service that can time out, a timeout
+  is not a negative — read the app's own error text (a distinct "timed out" vs "not found"/"failed"
+  message is the discriminator) and retry the timeouts, or a slow response reads as "the file isn't
+  there" and you miss it.
+- **Don't over-parallelise against a small worker pool.** A handful of concurrent sweepers can
+  saturate a gunicorn/puma app, turn every probe into a timeout (poisoning the point above) and
+  degrade the box for everyone. Measure one request's cost first, then pick concurrency; ~1 rps is
+  usually plenty.
+- **When brute force fails, question the *shape* of the candidates before adding more words.** A
+  generator that only emits `<root>/<word>` and `<root>/<word>/files` can never produce a
+  three-component layout like `<vhost>/public/files`. If no wordlist hits, the path template — not
+  the wordlist — may be what is wrong.
+
 Once a read lands, read the *deployment* before anything else: the web-server vhost config (it names
 the document root), the systemd unit (it names the service user and every `ReadWritePaths=` grant),
 and the application source. A blind file-write primitive elsewhere in the estate becomes a targeted
@@ -376,3 +392,44 @@ Framework note: a Rails `_*_session` cookie that decrypts (with a leaked
 plain `auth_token` cookie bound to client IP (`<db-auth_token>&M&<ip>`), replayable
 straight from the DB you just read. It authenticates GETs, but Rails CSRF still
 blocks POST/DELETE without a full session.
+
+## Services that execute attacker-supplied browser code
+
+A feature that accepts a browser extension, a userscript, a "render this page for
+me" job or any headless-browser automation and runs it server-side hands you a
+**full HTTP client inside the target's network namespace**. Treat it as SSRF with
+the strongest possible primitive set, and work it in this order.
+
+**1. Build the return channel before writing any payload.** Upload something
+inert whose only job is to prove what comes back. If the launcher passes
+`--enable-logging=stderr --v=1` (or the app tails the browser's stderr) and hands
+that log to the submitter, then `console.log()` is a synchronous exfil channel and
+the SSRF is not blind — you can read whole response bodies. If nothing comes back,
+fall back to an out-of-band callback and treat the SSRF as blind.
+
+**2. Read the log for the URLs the automation itself visits.** Those are the
+internal hostnames and vhosts nothing on the public site links to, and they are
+free — no wordlist finds an unlinked `Host:`-gated vhost faster than watching the
+bot navigate to it.
+
+**3. Then reach inward.** A Chrome MV3 extension declaring
+`"host_permissions": ["<all_urls>"]` `fetch()`es cross-origin from its service
+worker with no CORS involvement, so a service bound to `127.0.0.1` is reachable —
+loopback binding is a control against the network, not against a browser running
+on the host. Enumerate the loopback ports (a `TypeError: Failed to fetch` vs a
+status code is a clean open/closed oracle), and dump
+`chrome.cookies.getAll({})` with the `cookies` permission, which returns HttpOnly
+cookies the page's own JS cannot see. A throwaway profile makes cookie theft
+worthless; check whether the automation logs in before investing in it.
+
+**Delivery traps.** PHP uploaders commonly test `$_FILES[..]['type']`, which is
+the *client-declared* MIME — set it explicitly (`curl -F
+"f=@x.zip;type=application/zip"`) rather than concluding the filter is content
+based. Output parked in `$_SESSION` needs a cookie jar across the POST and the
+polling GET. And a `--load-extension` run does **not** grant "Allow access to file
+URLs", so `fetch('file:///…')` from the extension is a dead end — go through an
+internal HTTP service instead.
+
+**Reporting angle.** The fix is never "validate the uploaded extension". It is to
+give the sandbox no route to loopback or RFC1918, and to stop returning the
+browser's verbose log to the submitter.

@@ -20,6 +20,60 @@ Engagements are expected to change the methodology (see `memory/patterns.md`),
 so minor releases are the normal cadence. An entry that says only "ran a box"
 does not belong here — what belongs is what the run *changed*.
 
+## [1.16.0] — 2026-08-23
+
+One write-up published (**Eighteen**, Easy, Windows / AD) out of four machines rooted
+this cycle — the other three are not retired, so they change the methodology without
+becoming a chain; the rooted-machines count moves 30 → 34. The through-line is
+**the second consumer of your input is where the bug is**: not the surface that
+accepts it, but whatever re-parses it one layer down. `references/source-review.md`
+states it directly — a `subprocess.run([...])` with no `shell=True` is correct and
+irrelevant if the shell script it calls then puts `$1` in an arithmetic context,
+where `a[$(cmd)]` executes; and a user-editable "rule"/"formula"/"policy" string is
+code as soon as something `eval`s it, so find the *only writer* of that field and
+then look for the same engine a second time at a higher privilege.
+`references/privesc-linux.md` carries the sharpest instance: a root daemon that runs
+your code inside a real PHP sandbox (`disable_functions` + `open_basedir`) is not
+closed just because exec is blocked — if the policy file that *defines* the
+restrictions is writable by the runner and sits inside its own `open_basedir`, one
+submission rewrites the rules and the next one calls `system()` as root (with the
+obligation to restore the file afterwards). It also gains "loot the app's own install
+tree first" — a `support-bundles/`/`backups/` directory under a product install is a
+credential drop by design, and a `password` grep never matches a private-key body.
+
+`references/services.md` grows a full **MSSQL escalation and enumeration** section:
+walk the `IMPERSONATE` graph before concluding a low-privilege login is stuck,
+TRUSTWORTHY + `db_owner` as the second class, the non-sysadmin `xp_cmdshell` decoy
+(`LogonUserW ... 1326` means a stale proxy password, not a way in), linked servers as
+stored credentials you capture by hijacking the name they dial, and — when SMB and
+LDAP are firewalled — MSSQL as the domain-enumeration oracle via `--rid-brute` and
+`SUSER_SID()`. Two smaller traps join it: an sshd refusal does not rule out password
+reuse (`su` goes through PAM against `/etc/shadow`, a different gate), and polling SSH
+to detect a foothold trips fail2ban and bans your source IP for *every* account.
+
+`references/ad.md` adds "a new OS/functional level ships new object classes — treat
+them as new primitives": read the functional level first, ask who can *create* the new
+object types rather than who holds the classic edges, and reason about what the new
+object is trusted to assert — with Windows 2025 dMSA (Bad Successor, CVE-2025-53779)
+as the worked example rather than the lesson. It also notes that enumerating
+`(objectClass=user)` alone can miss the foothold account, because a user hidden from
+your read ACL is still named by DN inside every group's `member` attribute.
+`references/privesc-windows.md` gains the localhost-only custom service as a SYSTEM
+lever — read its request handler before fuzzing, because the recurring .NET sink is
+`Pipeline.AddScript(base + input)`, and a WCF/SOAP front end makes it a synchronous
+oracle needing no egress. `references/web.md` adds services that execute
+attacker-supplied browser code (a headless browser or an accepted extension is a full
+HTTP client inside the target's network namespace: build the return channel first,
+read the automation's own log for unlinked internal vhosts, then reach loopback) and a
+discipline note for blind sweeps — a timeout is not a negative, over-parallelising a
+small worker pool poisons every probe, and when brute force fails, question the
+*shape* of the candidates before adding words. `references/cracking.md`: check for a
+native hashcat mode before the john-reformat dance (a framework `pbkdf2:sha256:...`
+wrapper is mode 10900), and stop planning around the NetNTLMv1 DES shortcut — 2019+
+and 2025 clients refuse the downgrade. `references/foothold.md` separates the four
+causes of a callback that never came, and `references/pivoting.md` covers keeping an
+agent alive when the foothold is a one-shot exec.
+
 ## [1.15.0] — 2026-08-22
 
 Three write-ups published (**WingData** Easy, **AirTouch** Medium, **Facts** Easy)

