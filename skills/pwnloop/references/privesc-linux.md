@@ -131,13 +131,58 @@ confirm it segfaults). `sudo -l` needing no password after you already ran one �
 a live sudo token you can reuse.
 Sudo `1.9.14`–`1.9.17` → chroot NSS load (CVE-2025-32463), also reachable with
 **no sudo rule at all** — `sudo -R <evil_chroot> <cmd>` loads
-`libnss_/<svc>.so.2` from a chroot you control before authorization runs. But the
-upstream version string lies: a distro can backport the fix and keep the number,
-so **pin the package version** (`dpkg -l sudo` / `rpm -q sudo`), not `sudo -V`. A
-suffix like `1.9.15p5-3ubuntu5.24.04.2` is the patched security update and the
-exploit fails cleanly — verify empirically before spending time. When you do
-build the NSS module, compile it with `-nostdlib` and raw `syscall`s so it carries
-no glibc-version symbols and `dlopen` works across target glibc versions.
+`libnss_/<svc>.so.2` from a chroot you control before authorization runs, i.e.
+the vulnerable code executes *before* the authorization decision, so a user
+`sudo -l` flatly refuses still reaches root. When you build the NSS module,
+compile it with `-nostdlib` and raw `syscall`s so it carries no glibc-version
+symbols and `dlopen` works across target glibc versions.
+
+Sudo `1.9.14`–`1.9.17` also → CVE-2025-32462, the `--host` option applied to
+command execution rather than list mode only. When sudoers is written with
+`Host_Alias`/per-host rules, `sudo -h <other-host> <cmd>` evaluates *that* host's
+rules. A rule granting the account rights on a **different** host in the estate
+therefore becomes a local root. This one costs a single flag — no compiler, no
+shared object — so **try it before building the 32463 chroot**, and rank the pair
+by precondition, not by which you read about first.
+
+**Version-pinning a SUID binary has two failure directions — check both.** The
+upstream string can lie *downward*: a distro backports the fix and keeps the
+number, so `1.9.15p5-3ubuntu5.24.04.2` is patched and the exploit fails cleanly.
+But the package can equally lie *upward* about what actually runs. Resolve the
+binary first, then version **that file**:
+
+```bash
+command -v sudo; echo "$PATH"          # which one wins?
+find / -perm -4000 -type f 2>/dev/null | sort   # more than one copy?
+/usr/local/bin/sudo -V | head -1        # the binary that RUNS
+/usr/bin/sudo -V | head -1              # the packaged one
+dpkg -l sudo | tail -1                  # what the package manager believes
+```
+
+## A privileged binary shadowed earlier on PATH
+
+Generalise the above: **a second copy of a SUID/privileged program, earlier on
+`PATH` than the packaged one, is outside patch management entirely.** `apt`,
+`dnf` and every vulnerability scanner that reads the package database will
+report the *managed* copy — correct, current, sometimes explicitly `hold`-ed —
+while every unqualified invocation runs the unmanaged one in
+`/usr/local/{bin,sbin}` or `/opt`.
+
+The tell is duplication itself. Run the SUID sweep and **read the whole list for
+two paths ending in the same program name** before you look at any single
+binary's version; a `dpkg -l` that reports a patched, held package is not
+reassurance, it is a reason to check whether that package's binary is the one
+being executed. The inverted case is equally common on a curated host: when the
+obvious daemon is version-backported-fixed, the deliberately-unpatched thing is
+usually a hand-built copy sitting in `/usr/local`.
+
+```bash
+find /usr/local /opt -perm -4000 -type f 2>/dev/null   # one-line audit
+```
+
+Anything this returns is worth versioning and CVE-hunting on its own terms,
+regardless of what the package database says. `/usr/local` being `nosuid` is the
+hardening answer; its absence is a finding for the report.
 
 Quick classes the sweep already surfaced:
 - **Writable `/etc/passwd`** → add a root-uid user with a known hash
@@ -572,6 +617,60 @@ mount-side ownership/setuid mishandle*.
 "OverlayFS / FUSE" or "kernel CVEs this year" is the box telling you to pin the
 kernel and hunt this class.
 
+## A Linux host joined to a Kerberos realm — the realm can name your local root
+
+A Linux box that is a domain/realm member (`sssd`, `realmd`, `winbind`, a
+`/etc/krb5.conf` naming a KDC, or a `*.keytab` on disk) has outsourced part of its
+authentication to the directory. The mapping is **by name**: the default rule is
+that `alice@REALM` may act as the local account `alice`, and that rule is applied
+to *whatever* principals the realm contains — including ones created after the host
+was joined.
+
+So on such a host, **being able to create a principal is being able to pick which
+local account you map to.** Creating a realm principal called `root` and then
+`kinit`-ing it maps to local `root`:
+
+```bash
+ls -l /etc/krb5.keytab /etc/*/*.keytab /var/lib/sss/          # is this host realm-joined?
+klist -k <file>.keytab                                        # which principal does it carry?
+kinit -kt <file>.keytab <principal>                           # keytab = passwordless credential
+# with directory write (e.g. CreateChild on an OU):
+samba-tool user create root '<pw>' --url=ldaps://<dc>
+kinit root@REALM
+ksu root                                                      # or: ksu, su -, sudo -i
+id
+```
+
+Three details decide whether this lands:
+
+- **The keytab is the credential.** A readable `*.keytab` needs no password and is
+  usually owned by the service account that runs a daemon — so a foothold as that
+  daemon is a directory credential, not just a local one. `klist -k` names the
+  principal; `kinit -kt` turns it into a TGT. Treat every keytab found in a sweep
+  the way you treat a private key.
+- **What may create a principal is broader than "domain admin".** `CreateChild` on
+  a single OU — the kind of delegation handed to a migration, provisioning or
+  runner account — is enough, and it is invisible to an ACL sweep that only looks
+  for edges onto users and groups. Enumerate rights on **containers and OUs**, not
+  just on principals.
+- **`ksu` is fussy about how it is invoked.** It authorises through `.k5login` (or
+  the default name rule when no `.k5login` exists) and its non-interactive
+  `-e <cmd>` path takes a different, stricter route than the interactive one. If
+  `ksu -e` refuses, try plain `ksu <user>` on a real PTY before concluding the
+  mapping is not there — an upgraded shell is a precondition, not a nicety.
+
+**The class, stated generally:** wherever a local authorisation decision is
+delegated to a remote naming authority, *write access to that authority is local
+privilege*. The same shape appears with LDAP-backed `sudo` rules, an SSH CA that
+signs on name, and NIS/`nsswitch` sources — and it is why "who can create objects
+here" is a privilege-escalation question, not an inventory question.
+
+**Defensively:** name-based mapping needs an explicit allow-list
+(`.k5login` per account, `auth_to_local` rules, `sssd`'s `simple_allow_users`), a
+keytab must not be readable by the accounts that merely *use* the service, and no
+delegated account should hold `CreateChild` on a container without a corresponding
+deny on privileged names.
+
 ## Kernel exploits — last resort
 
 Only when enumeration is genuinely exhausted. They crash lab boxes and
@@ -579,6 +678,61 @@ demonstrate nothing interesting. If you must: match the exact kernel version,
 prefer a well-reviewed PoC (DirtyPipe CVE-2022-0847, PwnKit CVE-2021-4034,
 Dirty COW on ancient boxes), and note that PwnKit is a `pkexec` misconfiguration
 rather than a kernel bug — check for it early, it is common on older lab images.
+
+## Root job that *copies* files you can write — modes travel with the file
+
+The archive-extraction class below has a quieter sibling that needs no archive, no
+filter bypass and no CVE: **a privileged job that copies a directory an
+unprivileged principal owns, preserving permission bits.** `cp -a`/`-p`, `rsync
+-a`, `tar` piped through, `install -p`, and any application-level backup that
+"copies the data directory" all do this. The copy runs as root, so every file it
+writes is *root-owned*, and it keeps the **source** file's mode — so a mode-`6777`
+file you plant in the source directory comes out the other side as a root-owned
+SUID+SGID binary that you can execute.
+
+The reason this is easy to miss is that the writable directory and the root-owned
+output directory are usually far apart, and the output directory is often
+`root:root 0755` — correctly locked down, which reads as "nothing can be planted
+here". Nothing can be planted there *directly*; the job plants it for you.
+
+**Reasoning, in order:**
+
+1. **Find a periodic or triggerable root job that reads from a path a service
+   account owns.** `/etc/cron.*`, systemd timers, and the product's own
+   backup/maintenance script. The source is the interesting half — a data
+   directory, a spool, an upload tree.
+2. **Establish that modes survive the copy.** Plant a marker with an unusual mode
+   in the source (`chmod 4755 marker`), wait a cycle, `ls -l` the destination. If
+   the bits came through and the owner is `root`, the primitive is live. Do this
+   before writing anything else — it is one cycle and it settles the question.
+3. **Check the destination mount, not just the directory.** `findmnt -no OPTIONS
+   -T <dest>`; `nosuid` there makes the setuid bit inert and you want a different
+   sink (something root later executes) instead.
+4. **Traversal, not write, is what you need on the destination.** You never write
+   to it; you only need `x` on the path to run what landed there.
+
+```bash
+# in the writable source directory
+cp /bin/bash ./bash && chmod 6777 ./bash
+# after the next cycle
+ls -l <dest>/bash            # -rwsrwsrwx 1 root root  →  primitive confirmed
+<dest>/bash -p -c 'id'
+```
+
+**Read the job for the trap before you attack the obvious verb.** These scripts
+typically end in an archive step (`zip -r`, `tar -czf`) and the reflex is to chase
+symlink following there. Check what the *copy* step does with symlinks first: most
+copiers skip or recreate them rather than dereferencing, and some (a database's
+own base-backup tool, for instance) fail outright when they meet one — so the
+symlink route can be a dead end while the mode-preservation route beside it is
+clean and instant. The transferable question is not "does anything here follow a
+symlink" but **"what property of my file does this root-run job carry across the
+boundary"** — mode bits, ownership, xattrs, and the name itself are all candidates.
+
+**Defensively:** a backup should not run as root, and if it must, it should strip
+SUID/SGID on the way in (`rsync --chmod=ugo-s`, or `find <dest> -perm /6000
+-delete` after the copy) and treat any service-owned source directory as untrusted
+input. `nosuid` on the destination partition breaks it independently.
 
 ## Root job that extracts an attacker-influenced archive
 

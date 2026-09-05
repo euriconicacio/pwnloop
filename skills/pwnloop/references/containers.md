@@ -57,6 +57,25 @@ device or host-mount routes below.
 `/etc/shadow`. A mounted host `/proc` or `/dev` (privileged) lets you reach host
 memory or raw disk (`debugfs /dev/sda1`).
 
+**Writable bind mount + no userns-remap = a root-write primitive on the host,
+even from an unprivileged container.** Docker without `userns-remap` maps
+container uid 0 straight to host uid 0, so any file *container-root* creates on a
+read-write bind mount is `root:root` on the host. You often already have
+container-root: a service account with passworded `sudo` inside the container is
+enough (get the password from the app config or `env`). Turn the write into host
+code-exec by the cheapest route the host allows:
+
+- **setuid drop** — copy a shell onto the mount, `chown root:root`, `chmod 4755`;
+  run it from the host as any user (`/mount/path/.x -p`). Works only if the host
+  partition holding the mount is **not `nosuid`** — check `findmnt -no OPTIONS -T
+  <mount>` first; `/tmp`-style `nosuid` makes the setuid bit inert (see
+  privesc-linux).
+- if `nosuid`, write into a path the mount overlaps that root *executes* instead
+  (a cron script, an `authorized_keys`, a systemd unit) rather than a setuid file.
+
+Confirm the mapping before trusting it: `sudo touch /mount/x` in the container,
+then check the owner on the host — `root:root` means no remap and the escape is live.
+
 ## Capability-specific routes
 
 - **CAP_SYS_ADMIN** — mount, cgroup escapes, and mounting host block devices.

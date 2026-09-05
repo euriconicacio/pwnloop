@@ -20,6 +20,136 @@ Engagements are expected to change the methodology (see `memory/patterns.md`),
 so minor releases are the normal cadence. An entry that says only "ran a box"
 does not belong here — what belongs is what the run *changed*.
 
+## [1.18.0] — 2026-09-05
+
+Nine write-ups published — **Browsed** (Medium, Linux), **Gavel** (Medium, Linux),
+**HackNet** (Medium, Linux), **Overwatch** (Medium, Windows / AD), **Slonik**
+(Medium, Linux), **Store** (Hard, Linux), **Expressway** (Easy, Linux),
+**MonitorsFour** (Easy, Windows) and **Forgotten** (Easy, Linux) — taking the index
+from 30 to 42 chains and the rooted-machines count 39 → 43. This release also backfills what 1.17.0 shipped
+without: Bamboo, Conversor and Dump were committed as files but never indexed, and
+the track-record line had been stale since 1.16.0.
+
+The through-line this cycle is **the copy of the thing that is not the one being
+managed**. `references/privesc-linux.md` gains a section for it: a second SUID or
+privileged binary sitting earlier on `PATH` than the packaged one is outside patch
+management entirely, because `apt`, `dnf` and every scanner that reads the package
+database report the managed copy — correct, current, sometimes explicitly `hold`-ed
+— while every unqualified invocation runs the unmanaged one in `/usr/local` or
+`/opt`. The tell is duplication itself, so read the SUID sweep for *two paths ending
+in the same program name* before versioning any single binary, and treat a patched,
+held package as a reason to check which file actually executes rather than as
+reassurance. `find /usr/local /opt -perm -4000 -type f` is the one-line audit. The
+same section now pairs sudo CVE-2025-32463 with **CVE-2025-32462** (`--host` honoured
+for command execution, not just `-l`, so a rule granting rights on a *different* host
+in the estate is a local root) and says to rank the pair by precondition: 32462 costs
+one flag, 32463 costs a chroot and a compiler.
+
+`references/services.md` grows an **IPsec / IKE** section — there was no 500/udp
+coverage at all. An ISAKMP responder that will negotiate IKEv1 Aggressive Mode is a
+pre-authentication credential oracle: Main Mode exchanges identities only after a DH
+key exists, Aggressive Mode puts the responder's nonce, DH value, **identity** and a
+**PSK-derived hash** in the first reply, before the initiator has proven anything.
+Read the whole handshake rather than just the hash — an `ID_USER_FQDN` payload hands
+over an internal hostname *and* a valid username with no credential, and an XAUTH
+vendor ID means the PSK is the group secret rather than the whole door. The recurring
+finish is not building a tunnel: the recovered PSK is tried as the login password of
+the account the `ID` payload just named, one account at a time because `fail2ban` is
+usually present. The section also sweeps **69/udp TFTP**, where an anonymous root
+serves device configuration that is a credential file by design — with the caveat
+that a config whose passwords are all `*****` is set dressing, and belongs in the
+ledger as `DEAD` with that reason.
+
+`references/containers.md` states the bind-mount escape as a primitive: a writable
+bind mount plus no `userns-remap` maps container uid 0 to host uid 0, so anything
+*container-root* writes on the mount is `root:root` on the host — and container-root
+is often just a service account with passworded `sudo` inside the container, the
+password sitting in `env` or the app config. Confirm the mapping with a `touch`
+before trusting it, check `findmnt -no OPTIONS -T <mount>` before reaching for a
+setuid drop, and when the host partition is `nosuid`, write into something root
+*executes* (a cron script, an `authorized_keys`, a unit file) instead.
+`references/web.md` adds the **unfinished installer** — an app that redirects to its
+setup wizard has not been configured, and most installers accept any reachable
+database host, including yours; stand up a DB on the VPN-facing attacker host, let
+the wizard create and populate the schema there, set the admin account in the final
+step, and pivot to the app's admin-only RCE. Two operational notes come with it:
+drive the wizard with a persistent cookie jar so the CSRF cookie matches the form
+token, and once the config points at a remote DB every page round-trips across the
+VPN, so fire requests serially or you wedge the target's worker pool. Finally, an
+SSTI correction — **test the payload where the value is reflected unescaped**, not
+where it is escaped. A field echoes into several sinks with different escaping, so a
+literal `{{7*7}}` on the obvious page is not proof of "no SSTI"; and Django is the
+trap, because its sandbox blocks the arithmetic while a crash on `{{7*'7'}}` still
+confirms server-side evaluation, at which point the move is reading exposed context
+objects rather than concluding the sink is dead.
+
+The rest of this release comes from auditing the *write-back* itself rather than from a
+single run. Reading the recent ledgers against the tracked references turned up technique
+that had been exercised and never written down, and one cross-reference that pointed at a
+section which did not exist. `references/ad.md` gains two of them. **AD-integrated DNS**:
+the default zone ACL grants Authenticated Users `Create all child objects`, so any domain
+account can add a *new* record while being unable to overwrite an existing one — which makes
+a name that does not resolve a name you can define, and turns any dangling reference in the
+estate (a linked server, a hardcoded update host, an unregistered `wpad`) into either a
+credential source or a content source. `services.md` had been pointing at this note for a
+release without it existing. **Trusts**: DCSync gives you `krbtgt` for *that* domain, and the
+question the loop was not asking is what the trust does with it — direction and SID filtering
+decide whether a golden ticket carrying an extra SID for a privileged group in the other
+domain is one command or a separate campaign, and the useful group is often a delegated
+operations one rather than `Domain Admins`.
+
+`references/privesc-linux.md` gains two more. **A Linux host joined to a Kerberos realm maps
+`principal@REALM` to a local account by name**, so write access to the directory is local
+privilege: `CreateChild` on a single OU — the kind of delegation a provisioning or runner
+account holds, and the kind an ACL sweep that only looks at users and groups never sees — is
+enough to create a principal named `root`, and a readable keytab is a passwordless credential
+for whatever principal it carries. The generalisation is the point: wherever a local
+authorisation decision is delegated to a remote naming authority, "who can create objects
+here" is a privilege-escalation question. And **a root job that *copies* files you can write,
+preserving modes** — the quieter sibling of the archive-extraction class, needing no archive,
+no filter bypass and no CVE, because a mode-6777 file planted in the source directory comes
+out of a root-run `cp -a`/`rsync -a`/base-backup as a root-owned SUID binary. It carries the
+marker-file test that settles it in one cycle, the `findmnt` check for `nosuid` on the
+destination, and the warning that the archive step sitting next to it is usually the decoy.
+
+`SKILL.md` gains three rules. Two extend the CVE-set discipline in step 2: **a primitive you
+cannot trigger is a cue to re-enumerate, not to keep engineering the trigger** (a product at a
+pinned version usually has more than one issue, and the reason this one will not fire is often
+that it is not the intended door), and **when egress is blocked, rank candidates by delivery
+direction at selection time, not at diagnosis time** — a box that cannot call home is not
+harder, it is narrower, and the narrowing is knowable before you spend anything. The third
+closes the loop on the loop: step 8 now requires the write-back to be **recorded in the ledger
+as a `## Write-back into the loop` section**, one line per file touched, with an explicit
+"nothing to add" where that is the honest answer, and with corrections named as such. The
+write-back is the only step whose output lives outside the engagement directory, so it is the
+only one whose omission leaves no trace — a run that skips it looks identical, months later,
+to a run that had nothing to say. Making it a ledger artifact is what lets a release read
+across engagements and see which runs actually fed the methodology.
+
+## [1.17.0] — 2026-08-30
+
+Three write-ups published (**Bamboo** Medium, **Conversor** Easy, **Dump** Hard, all
+Linux); the rooted-machines count moves 34 → 39. `references/web.md` gains
+**argument injection through user-controlled filenames**: an archiver invoked as
+`zip <out> *` from a directory the user populates turns every filename into an
+option, so `-T` plus `--unzip-command=<cmd>` is command execution — with the
+filename-constraint bypasses (a leading dash sink, no-slash payloads, `;`
+truncation) that make it usable when uploads are sanitised. It also covers
+equal-length ciphertext as a repeating-key XOR break, and canonicalisation checks
+wired to the wrong operation (a `path.normalize(x) == x` guard that gates a remote
+fetch while the dangerous local read runs unconditionally).
+`references/privesc-linux.md` adds **sudo mid-argument wildcard flag-injection** — a
+`*` anywhere in a sudoers pattern matches spaces, so extra flags can be smuggled
+into a "tightly constrained" command (`tcpdump -Z`, `-r`, `-V`, a second `-w`) to
+produce a root-owned write anywhere — and the root-owned browser-automation server
+(ChromeDriver/Selenium) on a loopback port, which is both a `file://` read and a
+`chromeOptions.binary` execution as root. `references/services.md` notes that an
+SFTP-only account with `ForceCommand internal-sftp` and a chroot is not a jail when
+`AllowTcpForwarding` is left at its default, and that `node --inspect` is
+unauthenticated RCE through CDP `Runtime.evaluate`. `SKILL.md` adds the concise,
+path-focused terminal-output rule: exploit scripts, payloads and large bodies go to
+files in the engagement directory, and the chat carries the path, not the payload.
+
 ## [1.16.0] — 2026-08-23
 
 One write-up published (**Eighteen**, Easy, Windows / AD) out of four machines rooted
@@ -1046,7 +1176,14 @@ machines, both Linux (one easy, one medium).
 - Small sample, and no machine has defeated the loop yet — so its failure mode
   is still unobserved.
 
-[Unreleased]: https://github.com/euriconicacio/pwnloop/compare/v1.12.0...HEAD
+[Unreleased]: https://github.com/euriconicacio/pwnloop/compare/v1.18.0...HEAD
+[1.18.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.18.0
+[1.17.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.17.0
+[1.16.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.16.0
+[1.15.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.15.0
+[1.14.1]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.14.1
+[1.14.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.14.0
+[1.13.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.13.0
 [1.12.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.12.0
 [1.11.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.11.0
 [1.10.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.10.0

@@ -55,6 +55,21 @@ pwnloop x "ffuf -u 'http://machine.htb/page.php?FUZZ=test' \
 
 ## Vulnerability classes, in the order they usually appear on labs
 
+**Exposed / unfinished installer — point it at a database you control.** An app
+that redirects everything to its setup wizard (`?r=installer`, `/install`,
+`/setup`, `install.php`) hasn't been configured, and most installers ask for a DB
+*host* they will happily accept as anything reachable — including your box. The
+target having no local DB is not a wall: stand up MariaDB/Postgres on the
+VPN-facing attacker host (bound to `0.0.0.0`, a remotely-usable account), give the
+installer your host/user/pass, let it create+populate the schema on your server,
+and set the admin account in the final step. You now own an *installed* app and
+its admin panel — pivot to the app's admin-only RCE (plugin/theme/template upload,
+see the deserialization and upload notes below). Watch two things: (1) drive the
+wizard with a persistent cookie jar so the CSRF cookie matches the form token on
+every POST; (2) once its config points at your *remote* DB, every page round-trips
+queries across the VPN — fire requests serially, or concurrency exhausts the
+target's workers and wedges it.
+
 **Local file inclusion** — any parameter taking a path or template name.
 ```
 ?page=../../../../etc/passwd
@@ -273,6 +288,18 @@ Freemarker: <#assign x="freemarker.template.utility.Execute"?new()>${x("id")}
 Velocity:   #set($e=$rt.getRuntime().exec("id"))
 ERB:        <%= `id` %>
 ```
+
+**SSTI — test the payload where the value is reflected *unescaped*, not where it is
+escaped.** A field can echo into several places (profile, list, popup, a JSON/AJAX fragment)
+with different escaping. `{{7*7}}` shows up literally on an autoescaped page yet renders `49` in
+the one sink built by hand (string concatenation into `render`/`from_string`, an admin/preview
+view, an AJAX HTML fragment). So a value that is inert on the obvious page is not proof of
+"no SSTI" — enumerate every reflection of the input and fire the probe in the one that isn't
+escaped. Django is the trap here: its templates are sandboxed (no `{{7*7}}` arithmetic on
+strings, no `__globals__`), so a crash on `{{7*'7'}}` *confirms* server-side evaluation even
+though direct RCE is blocked; pivot to reading exposed context objects (`{{ request }}`, and any
+queryset/model the view passes in — `{{ users.values }}` dumps rows, often including secrets)
+rather than concluding the sink is dead.
 
 **NoSQL injection** (Mongo etc.) — auth bypass with operator injection:
 ```

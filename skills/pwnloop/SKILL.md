@@ -323,6 +323,27 @@ before committing hours — on this loop's ORION box that discipline was violate
 deep exploit-dev went into the hard memory-corruption CVE while a cheaper
 logic-bug CVE in the *same* binary was the intended door.
 
+**A primitive you cannot trigger is a cue to re-enumerate, not to keep
+engineering the trigger.** The recurring shape is: you find the vulnerable field,
+you confirm the injection reaches it, and then the thing that would *execute* it
+never runs — a poller on a schedule that is disabled, a queue nothing drains, a
+job that fires only for a user who never logs in. Hours disappear into building a
+trigger. Treat the wall itself as evidence: a product at a pinned version usually
+has more than one issue, and the reason this one is hard to fire is often that it
+is not the intended door. Go back to the CVE set for that exact version and ask
+which entry needs *no* cooperation from the target's own scheduling.
+
+**When egress is blocked, rank candidates by delivery direction at selection
+time, not at diagnosis time.** Characterise egress early and cheaply — it is
+worth one deliberate test — then, the moment it is confirmed blocked, down-rank
+every candidate whose delivery requires the target to reach *out* (a callback, a
+rogue server it must poll, a reverse shell) and promote the ones that return
+their result inside a response you asked for: a webshell written into a served
+directory, an injection whose output is reflected, an API that hands you a log or
+a table. This is a filter on technique selection, not a consolation prize after a
+callback fails to land. A box that cannot call home is not harder; it is narrower,
+and the narrowing is knowable before you spend anything.
+
 ### 3. Foothold
 Exploit the most promising lead. Catch shells with a listener you started
 beforehand; upgrade to a PTY the moment you land. Log the exact reproduction
@@ -418,6 +439,22 @@ make the changes rather than describing them:
 
 Nothing to add is a legitimate outcome; say so rather than inventing an entry.
 A memory file padded with restatements of the obvious costs every future run.
+
+**Record what you changed, in the ledger, as a `## Write-back into the loop`
+section** — one line per file touched, naming the reference and the class you
+added or corrected, plus an explicit "nothing to add" where that is the honest
+answer. This is not bookkeeping. The write-back is the only step whose output
+lives outside the engagement directory, so it is the only one whose omission
+leaves no trace: a run that skips it looks identical, six months later, to a run
+that had nothing to say. The ledger section is what makes the loop *auditable* —
+at release time you can read across engagements and see which runs fed the
+methodology and which ones quietly didn't, and a reference entry that no ledger
+claims is an entry nobody can trace back to the evidence that earned it.
+
+**A correction counts as much as an addition.** If a run proved an existing entry
+incomplete or actively misleading, editing that entry is the write-back — say so
+in the ledger line, because a silent correction and a silent omission look the
+same afterwards.
 
 ### 9. Name the engagement
 Now — and only now — ask the operator what the machine is called, and rename the

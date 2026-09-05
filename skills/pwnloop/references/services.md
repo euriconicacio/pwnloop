@@ -233,6 +233,62 @@ pwnloop x "snmpwalk -v2c -c public $T 1.3.6.1.2.1.25.4.2.1.2"   # running proces
 ```
 Process listings frequently contain credentials passed on the command line.
 
+## IPsec / IKE (500/udp, 4500/udp NAT-T)
+
+An ISAKMP responder is a **pre-authentication credential oracle** whenever it
+will negotiate IKEv1 Aggressive Mode. Treat 500/udp the way you treat an
+anonymous SMB share: something to interrogate before you have any credential.
+
+**Why the mode is the whole question.** IKEv1 Main Mode takes six messages and
+sends identities and the authentication payload only *after* a Diffie-Hellman
+key exists, so they are encrypted. Aggressive Mode compresses this to three, and
+pays for it by putting the responder's nonce, DH public value, **identity** and a
+**hash derived from the PSK** in the first reply — before the initiator has
+proven anything. So if the server speaks it, anyone who can reach the port can
+request offline-crackable authentication material, anonymously and repeatedly.
+
+```bash
+pwnloop x "ike-scan -M $T"        # Main Mode: what is the proposal?
+pwnloop x "ike-scan -M -A $T"     # Aggressive Mode: does it answer at all?
+pwnloop x "ike-scan -M -A --pskcrack=/engagements/$NAME/loot/ike-psk.txt $T"
+pwnloop x "psk-crack -d /usr/share/wordlists/rockyou.txt /engagements/$NAME/loot/ike-psk.txt"
+```
+
+Read the whole handshake, not just the hash — the `ID` payload is often the more
+valuable half:
+
+- `ID(Type=ID_USER_FQDN, Value=<user>@<host>)` hands over an **internal hostname
+  and a valid username** with no credential. Add the hostname to the container's
+  `/etc/hosts` immediately and carry the username into every later spray.
+- `VID=...(XAUTH)` means a second, user-level credential layer exists behind the
+  PSK — the PSK is the group secret, not the whole door.
+- A weak proposal (`3des-sha-modp1024`) is a finding in its own right for the
+  report even when the PSK falls to a dictionary first.
+
+**The PSK is a string somebody chose, so test it as a password.** The recurring
+finish is not building a tunnel at all: the recovered PSK is tried as the UNIX /
+service password of the account the `ID` payload just named. A VPN group secret
+and a login password are different classes of secret that people routinely set to
+the same value. Spray it one account at a time — never a list — since `fail2ban`
+is commonly present.
+
+If the PSK does not crack and you do need the tunnel, `strongswan`/`ipsec` with
+the recovered PSK gets you a Phase 1; XAUTH credentials are then the next target,
+and `ike-scan --id=<group>` enumerates valid group names by which IDs draw a
+handshake.
+
+Also sweep the other UDP services that cluster on network-appliance hosts —
+**69/udp TFTP** in particular. An anonymous TFTP root often serves device
+configuration (`*.cfg`, `*-confg`, `running-config`), which is a credential file
+by design: `enable` secrets, SNMP communities, VPN keys.
+
+```bash
+pwnloop x "tftp $T -c get ciscortr.cfg"     # names are guessable/enumerable
+```
+
+Note that a config whose passwords are all `*****` is set dressing, not a
+credential source — record it `DEAD` with that reason and move on.
+
 ## Kerberos (88)
 
 An open `88` = a KDC = you can enumerate and spray users with **no credential**
