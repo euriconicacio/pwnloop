@@ -92,3 +92,38 @@ Binary exploitation is time-expensive. Time-box it like anything else: if after
 work the other leads. On a lab box a memory bug is usually the *whole* intended
 path when it's present — so if the box also has an obvious web/AD route, that's
 probably the intended one and the binary is a distraction.
+
+## SEH overwrite: the null-terminated-copy + null-MSB-address fingerprint
+
+Before choosing return-overwrite vs SEH, check two things together:
+
+1. **How does the copy terminate?** A `strcpy`/`sprintf("%s")`/`strcat` sink stops at the
+   first null in the source and writes exactly one null at the destination end. So a
+   null-free payload can be arbitrarily long, but you can place a value containing a null
+   byte only as the *last* thing written (the copy''s own terminator supplies that null).
+2. **What do the usable code addresses look like?** In a non-ASLR EXE based at 0x400000,
+   every `.text` gadget is `0x0040xxxx` — the most-significant byte is `0x00`.
+
+When both hold, a plain `jmp esp` return overwrite is a dead end: the return address must be
+the final 4 bytes (so its null MSB is the auto-terminator), which leaves nothing you control
+at `esp` after the `ret`. The escape is to overwrite the **SEH registration record** instead
+of (or before) the saved return address — it sits at a lower stack address, so you reach it
+without needing to write past a null.
+
+Method (all offsets measured from your buffer start; get them from the disassembly, the
+function''s `mov fs:[0], esp` prologue tells you where the record is — record = `{next, handler}`):
+- **SE-handler** <- a `pop r32; pop r32; ret` gadget in the non-ASLR module. Place it as the
+  final 4 bytes so the copy''s terminator provides its null MSB. Confirm SafeSEH is off first
+  (`SEHandlerCount`/`SEHandlerTable` = 0 in the Load Config directory) — then any address works.
+- **next-SEH** (the 4 bytes just below the handler) <- a short `jmp` (`EB xx`) backward. It
+  can''t reach far, so bounce it to a 5-byte near `jmp` (`E9 rel32`, easily null-free) you
+  planted just below it, which jumps back to shellcode at the top of the buffer.
+- **Trigger the exception for free.** You don''t need a second bug: a C++ handler''s
+  `std::string` locals get smashed by the same overflow, and their destructors at function
+  exit dereference your garbage -> access violation -> your handler runs.
+- Payload bad chars: at least `\x00` (the sink) and usually `\x0a\x0d` (HTTP). DEP off means
+  stack shellcode runs directly; no ROP needed.
+
+The point is the *fingerprint*: "null-terminating copy + null-MSB addresses" is what selects
+SEH over `jmp esp`. Read the mitigation flags and the sink''s terminator behaviour before
+writing a single byte of the exploit.

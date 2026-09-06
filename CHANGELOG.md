@@ -20,6 +20,48 @@ Engagements are expected to change the methodology (see `memory/patterns.md`),
 so minor releases are the normal cadence. An entry that says only "ran a box"
 does not belong here — what belongs is what the run *changed*.
 
+## [1.19.0] — 2026-09-06
+
+Eight write-ups published — **Ten** (Hard, Linux), **Guardian** (Hard, Linux),
+**Delegate** (Medium, Windows / AD), **Previous** (Medium, Linux), **Rainbow**
+(Medium, Windows), **Build** (Medium, Linux), **CodePartTwo** (Easy, Linux) and
+**Lock** (Easy, Windows) — taking the index from 42 to 50 chains and the
+rooted-machines count 43 → 51.
+
+The through-line this cycle is **the privileged config is the payload**: on more
+than half of these boxes root did not come from a memory bug or a kernel exploit
+but from a value an unprivileged user controls being rendered, unescaped, into a
+file or an argument list that a root process then executes.
+`references/privesc-linux.md` grows the two general cases. First, *the sudo
+target's configuration is part of the trust boundary* — read the `Defaults` line,
+not just the command: `!env_reset` that keeps `HOME` turns any sudo-able tool that
+reads a dotfile into root (`~/.terraformrc` `dev_overrides` fork/execs an attacker
+`terraform-provider-*` before the go-plugin handshake, so judge it by a
+side-effect oracle, not the exit status). Second, *a sudo wrapper that hands a
+server its own config file* — the config language is the payload, and for Apache
+the reliable primitive is a **piped log** (`CustomLog "|/path/prog"`), spawned as
+root when Apache opens its logs. `references/devops.md` states the class from the
+other end: a value that *is* a command list — backup and job-runner configs
+(`npbackup` `pre_exec_commands`) and self-hosted-git push-to-deploy hooks — is RCE
+the moment you can write it. The same shape reaches the top of the chain on Ten,
+where a signup value is dropped into etcd and a root `remco` daemon templates it
+straight into an Apache vhost.
+
+`references/ad.md` and `references/relay.md` add the delegation-definition edge:
+**`SeEnableDelegationPrivilege`** is the right to *mark* an account trusted for
+delegation, separate from any DACL — a low-privileged group that holds it can flag
+a computer account for unconstrained delegation, coerce the DC, and take the
+domain; the two failure codes (`ERROR_PRIVILEGE_NOT_HELD` vs
+`ERROR_DS_INSUFF_ACCESS_RIGHTS`) tell you which half you are missing.
+`references/binary.md` gains the **SEH-overwrite fingerprint**: a null-terminated
+string copy into a module whose addresses carry a null MSB means you place one
+address into the SE-handler slot rather than chasing a `jmp esp`, so read the
+mitigation flags and the sink's terminator behaviour before choosing the
+technique. `references/privesc-windows.md` covers the interactive installer/repair
+LPE (PDF24, CVE-2023-49147) driven headless from the container and held on its log
+file with an **exclusive** oplock, so the SYSTEM helper blocks instead of flashing
+past.
+
 ## [1.18.0] — 2026-09-05
 
 Nine write-ups published — **Browsed** (Medium, Linux), **Gavel** (Medium, Linux),

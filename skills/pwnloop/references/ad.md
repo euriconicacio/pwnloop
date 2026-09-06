@@ -273,6 +273,51 @@ pwnloop x "impacket-findDelegation <dom>/<u>:<p> -dc-ip $T"   # enumerate all th
   Bronze Bit (CVE-2020-17049, `getST -force-forwardable`) revives the S4U2Proxy
   step when the DC would otherwise reject a non-forwardable ticket.
 
+### Who may *define* delegation — the privilege check is separate from the DACL
+
+Writing a delegation setting needs **two** independent things, and they are commonly
+held by two different principals:
+
+1. **`SeEnableDelegationPrivilege`** on the DC ("Enable computer and user accounts to
+   be trusted for delegation") — a *user right*, granted by policy, invisible to
+   BloodHound because it is not an ACE. Read it from `whoami /all` on every Windows
+   account you land as; a non-default group holding it is a domain-takeover finding in
+   its own right.
+2. **Write access to the specific attribute** on the target object.
+
+Read the LDAP error to tell which half you are missing — they are different codes and
+they point at different fixes:
+
+| Error | Meaning | What to do |
+|---|---|---|
+| `ERROR_PRIVILEGE_NOT_HELD` | The DACL allows the write; the *account* lacks the privilege | Re-do the write as a principal that holds `SeEnableDelegationPrivilege` |
+| `ERROR_DS_INSUFF_ACCESS_RIGHTS` | The account holds the privilege; the *object's DACL* does not allow this attribute | Pick a different object, or a delegation flavour that uses an attribute you can write |
+
+**Choose the flavour by which attribute you can write, not by which attack you prefer.**
+The two flavours have very different write requirements:
+
+- **Constrained** needs `msDS-AllowedToDelegateTo`, an ordinary attribute governed by
+  the object DACL. The creator of a machine account (`SeMachineAccountPrivilege` +
+  `MachineAccountQuota>0`) does **not** get it: creators receive `WriteProperty` on a
+  few *property sets* only, and the object's owner is Domain Admins, so there is no
+  `WriteDacl` fallback. Creating the computer over LDAP instead of SAMR does not change
+  this. Dump the DACL and check before assuming.
+- **Unconstrained** needs only the `TRUSTED_FOR_DELEGATION` bit in `userAccountControl`,
+  which lives in the **Account Restrictions** property set — exactly what a machine
+  account's creator *can* write. So a partial write primitive that looks like it kills
+  delegation often only selects unconstrained.
+
+```bash
+# what can I actually write on this object? dump the DACL, don't guess
+pwnloop x "bloodyAD --host $T -d <dom> -u <u> -p <p> get object PWN\$ --attr nTSecurityDescriptor"
+# unconstrained needs only the UAC bit
+pwnloop x "bloodyAD --host $T -d <dom> -u <u> -p <p> add uac PWN\$ -f TRUSTED_FOR_DELEGATION"
+```
+
+Unconstrained then costs a coercion (`references/relay.md`) and a resolvable name for
+the fake host (ADIDNS, above) — constrained costs neither, which is why it is worth one
+command to find out whether it is available before committing to the longer chain.
+
 ## DCSync and the domain
 
 ```bash

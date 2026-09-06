@@ -16,6 +16,66 @@ Look for: framework and version in headers/meta, developer comments, email
 addresses (username seeds), JS files referencing API paths, upload forms, any
 parameter that looks like a filename or a URL.
 
+## Before you fuzz: a SPA framework publishes its own route list and version
+
+Single-page frameworks ship a build directory that is a better enumeration source
+than any wordlist, because it is authoritative rather than a guess. Fetch it before
+starting a scanner — it takes one request and it also pins the version you need for
+the CVE hunt.
+
+**Next.js** (`X-Powered-By: Next.js`, `/_next/` asset paths). The page HTML names a
+`buildId`; both files below are then unauthenticated static assets:
+
+```bash
+curl -s http://t/_next/static/<buildId>/_buildManifest.js    # every page route, incl. dynamic [param]
+curl -s http://t/_next/static/chunks/main-<hash>.js \
+  | grep -oE '"[0-9]+\.[0-9]+\.[0-9]+"' | sort -u            # the framework version, in the string table
+```
+
+The version is not in any header — it is a literal in the runtime chunk. Pin it
+there, then run the CVE/PoC hunt as usual.
+
+Same idea elsewhere: **Nuxt** `/_nuxt/builds/meta/*.json`, **Angular**
+`main.*.js` + `ngDevMode`/`VERSION` literals, **Vite/React** the module graph in
+`/assets/index-*.js`, **webpack** a leftover `*.js.map` (`sourcesContent` is the
+original source). A `.map` file is the whole client source, unminified — always
+check for one next to any bundle you care about.
+
+Fuzz afterwards for what the manifest cannot know about: server-only API routes,
+backup files, and anything outside the framework's own router.
+
+## Edge middleware is not an authorization boundary — look for the internal-subrequest header
+
+Frameworks that run authorization in "middleware" at the edge need a way to mark
+their own internal re-entrant calls so middleware does not run twice. When that
+marker is a plain request header, an outside caller can set it and the framework
+skips the middleware — every route the matcher protects opens at once.
+
+Probe: pick a route that redirects to a login, then re-send it with the marker.
+A `307 → /signin` turning into `200` is the whole test.
+
+**Example — Next.js CVE-2025-29927** (fixed 15.2.3 / 14.2.25 / 13.5.9 / 12.3.5):
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H 'x-middleware-subrequest: middleware:middleware:middleware:middleware:middleware' \
+  http://t/protected
+```
+
+Two follow-ups that matter more than the bypass itself:
+
+- **Read the `matcher`.** `config = { matcher: ["/docs(.*)", "/api(.*)"] }` means
+  the bypass unlocks the *API* too, not just the pages you noticed. The API is
+  usually where the exploitable handler lives.
+- **The app's own source is now reachable.** Server bundles under
+  `.next/server/pages/**` contain compiled handlers with their literals intact —
+  which is what turns this into a credential disclosure once you also hold a read
+  primitive.
+
+Generalise the shape rather than the header: any framework where a *request-supplied*
+value decides "this is an internal call, skip the checks". Mitigation to recommend is
+always two-part — patch, and strip the header at the reverse proxy.
+
 ## Directory and file fuzzing
 
 ```bash
@@ -437,6 +497,41 @@ Pin the product version (a login-page footer, `Server:` header, a `/version`
 endpoint) and hunt the CVE + PoC for the *mechanism* before hand-rolling. Keep the
 per-product payload in `local.md`; the transferable rule is **"stored input that is
 later executed + a check/sink desync = RCE."**
+
+## An in-process interpreter fed submitted code is RCE — a "sandbox" is a version to look up, not a boundary
+
+Distinct from the stored-then-executed class above: here the endpoint hands your
+input *straight* to a language interpreter embedded in the app process
+(`js2py.eval_js`, `vm2`/`vm`, `PyExecJS`, Lua `load`, `expr`/`asteval`, a
+"formula"/"rule" field, an unpickle). The author usually calls a `disable_*` /
+`safe_mode` toggle and believes it is sandboxed. Treat that toggle as decoration:
+
+1. **Find the sink and its auth.** Grep the source (often downloadable — see the
+   `/download` habit) for `eval`, `exec`, `Function(`, `vm.run`, `pickle.loads`,
+   `render_template_string`. Check the route's session guard *independently* of
+   the app's other routes — the eval endpoint is frequently the one left
+   unauthenticated. *(CodePartTwo: `/run_code` had no `session` check while every
+   data route did.)*
+2. **Pin the interpreter version and hunt its escape CVE.** An in-process
+   sandbox is only as good as the library; nearly all have a public escape.
+   Search `"<lib> <version> sandbox escape"` + GitHub PoC and read it for the
+   *mechanism* (which object traversal reaches the dangerous class). The escape
+   is what makes the "disabled" import toggle irrelevant — it never imports
+   anything, it walks the object graph already in memory. *(js2py 0.74 →
+   CVE-2024-28397: `{}`→`__class__`→`__base__`→`__subclasses__()` to
+   `subprocess.Popen`, bypassing `disable_pyimport()`; vm2 has its own line of
+   escapes; Python `pickle`/`yaml.load` need no escape at all.)*
+3. **Return output in-band; do not reach for a shell first.** These sinks give a
+   synchronous result channel — the eval's own return value. Run the command with
+   `Popen(...).communicate()` and return stdout as the expression value; no
+   listener, survives egress filtering. One host-language gotcha: a value that is
+   host `bytes` may not coerce to the guest string type — decode it host-side
+   inside the payload before returning. *(js2py: `out[0].decode("utf-8")`, else
+   `Cannot convert object to primitive value`.)*
+
+Keep the per-library escape payload in `local.md`; the transferable rule is
+**"an interpreter embedded in the app process is not a sandbox — pin its version,
+find the published escape, and the return value is your output oracle."**
 
 ## An arbitrary-file-read runs as the app user — read the app user's own secrets
 

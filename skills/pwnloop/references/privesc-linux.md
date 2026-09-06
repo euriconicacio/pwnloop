@@ -805,6 +805,120 @@ language or loads modules/config from an attacker-controllable path — Ruby
 Perl, Lua, or any `--config`/`--include` that pulls executable content. If it does,
 that is the root primitive, no memory-corruption needed.
 
+**The cleanest instance is a config that *is* a command list.** Backup,
+configuration-management and job-runner tools (npbackup, borgmatic, restic
+wrappers, backup schedulers) take an explicit `-c <config>` and their config
+declares `pre_exec_commands` / `post_exec_commands` (or `hooks:`,
+`before_backup:`, `on_error:`) that the tool shells out *as its own user*. Sudo
+that tool with a caller-supplied config path and you do not even need a language:
+copy the app's own readable config, add one `pre_exec` line, point `-c` at your
+copy, and run the operation (`-b --force`). The hook fires before the real work,
+so it runs even when the backup itself fails (unreachable repo, size threshold).
+Confirm with `id > /tmp/x` in the hook. *(npbackup-cli 3.x: group
+`pre_exec_commands` ran as root before the backup.)*
+
+## The sudo target's *configuration* is part of the trust boundary — read `Defaults`, not just the command
+
+A sudo rule can pin the absolute binary, the working directory and a single
+subcommand, and still be a root shell, because most real tools read a config file
+*before* they do anything — and they look for it in `$HOME`.
+
+**So read the `Defaults` line first, every time.** `sudo -l` prints it above the
+rules and it is routinely skimmed past:
+
+```
+Defaults  !env_reset, env_delete+=PATH, secure_path=..., use_pty
+```
+
+`env_reset` is the sudo default and it clears the caller's environment.
+`!env_reset` keeps it. A rule with `!env_reset` that then deletes `PATH` is the
+dangerous shape: it looks like environment inheritance was considered, and it
+leaves `HOME` (and every tool-specific `*_CONFIG*` variable) intact. The same
+applies to a stray `env_keep += "HOME"` under an otherwise normal `env_reset`.
+
+Then ask what the target opens before it acts:
+
+```bash
+sudo -l                                   # read the Defaults line, then the rule
+strace -f -e trace=openat -o /tmp/o <target> <same args>   # or: ltrace / read the man page
+grep -nE 'HOME|CONFIG|RC$' <(strings $(command -v <target>))
+ls -la ~/.<tool>rc ~/.config/<tool> ~/.<tool>.d   # who owns what it will read?
+```
+
+Any of these in the caller's home is arbitrary root execution: `~/.terraformrc`
+(`provider_installation { dev_overrides {} }` → the plugin binary is fork/exec'd),
+`~/.gitconfig` (`core.pager`, `core.sshCommand`, `[alias]`), `~/.ansible.cfg`
+(`library`, `roles_path`), `~/.my.cnf`, `~/.psqlrc`, `~/.curlrc`, `~/.npmrc`,
+`~/.wgetrc`, `~/.gdbinit`, `~/.rclone.conf`.
+
+**Compact example — Terraform.** `(root) /usr/bin/terraform -chdir=/opt/x apply`
+with `!env_reset`: `~/.terraformrc` is user-owned, so repoint the override at a
+directory you control and drop an executable named `terraform-provider-<name>`
+in it. Terraform `fork`/`exec`s the plugin *before* the go-plugin handshake, so
+the payload runs as root and the "failed to negotiate the initial go-plugin
+protocol handshake" error that follows is cosmetic — check your side-effect
+oracle, not Terraform's exit status.
+
+Two properties make this class worth checking early:
+
+- It is **upstream of every constraint the rule author wrote.** Argument
+  validation inside the config/manifest the tool then loads is never reached.
+- It needs no wildcard in the sudo rule, so it survives the usual review that
+  hunts for `*` and flag injection.
+
+If you cannot remove `!env_reset` from your threat model, the equivalent read is:
+*is there any file this root process will parse that a non-root account can
+write?* — which also covers a root-owned config in a group-writable directory.
+
+## A sudo wrapper that feeds you an attacker-supplied server config — treat the config language as the payload
+
+A common "safe" sudo grant is a small wrapper (often a compiled C binary named
+`safe<daemon>ctl`) that runs a service control tool against a config file *you*
+supply from a fixed directory: `(ALL) NOPASSWD: /usr/local/bin/safeapache2ctl`,
+where the wrapper `execl`s `apache2ctl -f /home/<you>/confs/<file>.conf`. The
+author's mental model is "it's just a syntax check". It is not — the daemon's own
+config directives are a scripting language that runs as root.
+
+**The general move: find the directive that executes a program, not one that
+reads a file.** For Apache the reliable one is a **piped log** — Apache spawns the
+program in `ErrorLog "|/path/prog"` (or `CustomLog`, `TransferLog`) as root during
+log initialisation. Other daemons have their own: nginx `error_log`/`load_module`,
+`ssh -oProxyCommand`, sudoedit-style helpers, anything with an `exec`/`pipe`/`hook`
+directive.
+
+**Two conditions have to be met before the exec directive fires — miss either and
+"nothing happens":**
+
+- The wrapper almost always ships a **directive blacklist**. Read the binary
+  (`strings safe<x>ctl`) for the rejected tokens and, critically, *how* it
+  compares. A `starts_with`/`strncmp` check anchored at column 0 is a **prefix**
+  filter, and the config parser strips leading whitespace the filter does not — so
+  a single leading space (` LoadModule …`) is parsed by the daemon and invisible to
+  the filter. Always test the whitespace bypass against a prefix blacklist.
+- The exec directive must be *reached*. Apache aborts before `open_logs` if no MPM
+  is loaded or no socket is opened, so a piped-`ErrorLog` config that is missing a
+  ` LoadModule mpm_prefork_module …` (via the whitespace bypass) **and** a
+  `Listen 127.0.0.1:<free-port>` dies with "Terminated"/"No MPM loaded" and the
+  pipe never spawns. When a log/exec-directive payload silently does nothing, the
+  fix is almost always "the daemon failed init before the directive ran" — supply
+  the minimum to reach that phase, not a bigger payload.
+
+Minimal Apache shape (leading space on the LoadModule line is load-bearing):
+
+```
+ServerRoot "/etc/apache2"
+ LoadModule mpm_prefork_module /usr/lib/apache2/modules/mod_mpm_prefork.so
+Listen 127.0.0.1:8099
+ErrorLog "|/path/you/own/p.sh"      # p.sh runs as root at open_logs
+```
+
+Payload script does its work fast (drop a SUID shell, add a key) because the
+foreground daemon is killed when your sudo session ends; the pipe fires at startup,
+well before that. Instrument first (`id > /tmp/x` inside the script) to confirm the
+uid before assuming the class doesn't apply. Mitigation to recommend: whitelist
+directives / run a real `configtest` in a namespace, and anchor the blacklist after
+trimming whitespace.
+
 ## Confirm and record
 
 ```bash
@@ -863,3 +977,14 @@ package the tool imports, a `sitecustomize.py` on the path. Mitigations to
 recommend: `chmod 755` + root ownership on the cache directory, and run
 root-invoked Python with `-B` (no bytecode cache) or `-P` (do not prepend the
 script directory to `sys.path`).
+
+**A per-action identity gate does not protect the imports — they run first.** A
+sudo-able toolkit that checks `getpass.getuser()` inside each privileged branch
+still does `from utils import X` at the top, unconditionally, before any check.
+So you do not need the *guarded* action: pick the one branch with **no** identity
+check (a `status`/`version`/`help` sub-command almost always exists), and hijack a
+module the script imports for that path. The import executes as the sudo target
+regardless of which action is chosen or what the branch would have refused. When
+scanning a writable-module target, enumerate the sub-commands and their guards
+separately from the import list — the weakest sub-command sets the bar, not the
+one whose name matches the module you can write.

@@ -224,6 +224,46 @@ pwnloop x "dnsenum --dnsserver $T machine.htb"
 ```
 A successful AXFR usually hands you every vhost on the box.
 
+**A writable authoritative server is a trust-forging primitive, not just a map.**
+If you can add records to the zone the *target* resolves against, you can become
+any name that target trusts — the payoff lands wherever authentication is anchored
+to a hostname (`.rhosts`/`hosts.equiv` and the r-services below, `known_hosts`
+`CanonicalizeHostname`, TLS/Kerberos SPN checks, IP-allowlists resolved by name).
+Write vectors, in order of how often they show up on a lab: unauthenticated
+**RFC2136** dynamic update (`nsupdate`, frequently allowed only from the internal
+subnet — send it from a foothold container, not from the VPN); the DNS product's
+**own admin/API** (PowerDNS-Admin, PowerDNS HTTP API with the key from its
+`setting` table, BIND rndc); or writing the **backend store** directly (PowerDNS
+gmysql `domains`/`records`). Two things bite after the write: many resolvers want
+**forward-confirmed reverse DNS** (you need the `PTR` *and* the matching forward
+`A`, not just one), and authoritative servers **cache** — flush it
+(`pdns_control purge`, PowerDNS API `PUT .../cache/flush?domain=`) or wait out the
+TTL, or your record is correct in the DB and still invisible on the wire.
+
+## Berkeley r-services — rexec/rlogin/rsh (512/513/514)
+
+Open r-services are almost never accidental; they signal `.rhosts`/`hosts.equiv`
+**host-based trust** as the intended path. `rshd`/`rlogind` authorise a peer by
+resolving the *client IP back to a hostname* and testing that name against the
+trust file — so the exploit is a name you control, not a password.
+
+```bash
+pwnloop x "cat ~/.rhosts /etc/hosts.equiv 2>/dev/null"   # once you have any shell
+# '<host> +' means: from <host>, any user logs in with no password
+```
+
+The move when `/root/.rhosts` trusts a name like `admin.corp`:
+1. Point that name at your address in the zone the target resolves — forward
+   `A admin.corp → <your IP>` **and** reverse `PTR <your IP> → admin.corp`
+   (forward-confirmed reverse DNS; the forward record alone gets you
+   `getnameinfo: temporary failure` and a rejection). Flush the DNS cache.
+2. Confirm both directions from the target's resolver
+   (`dig -x <your IP> @<ns>` must return the trusted name), then connect as the
+   trusted user. `rsh`/`rlogin` bind a privileged source port, so run as root;
+   if no client is installed, the wire protocol is trivial
+   (`\0localuser\0remoteuser\0cmd\0` to 514) — a ~20-line Python client works.
+   *(Example: on build.vl this yielded `rsh -l root` = uid=0 on the host.)*
+
 ## SNMP (161/udp)
 
 ```bash

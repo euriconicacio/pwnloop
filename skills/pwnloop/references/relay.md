@@ -92,3 +92,38 @@ pwnloop x "impacket-ntlmrelayx ... " # or just let a capture server log it
 ```
 NetNTLMv2 → `john --format=netntlmv2` / `hashcat -m 5600`. A machine-account
 hash (`HOST$`) rarely cracks; relay it instead.
+
+## Prove the listener is up before you conclude the coercion failed
+
+A coercion that returns `ERROR_BAD_NETPATH` and a listener log that says nothing look
+exactly like a filtered target. Both readings are wrong more often than not, and both
+are cheap to falsify. Establish, in this order:
+
+1. **The listener is actually bound.** impacket's relay/capture tools (`ntlmrelayx`,
+   `krbrelayx`) run their servers as *daemon threads* and block the main thread on
+   `sys.stdin.readline()`. Under a non-interactive exec (`pwnloop x`, `docker exec`,
+   any `ssh host cmd`) stdin is at EOF, the read returns immediately, the main thread
+   exits and every listening socket dies with it — **after** the tool has already
+   printed `Servers started, waiting for connections` and with exit status 0. Hold
+   stdin open, and verify the bind rather than trusting the banner:
+   ```bash
+   pwnloop x "cd /engagements/<e>/loot; tail -f /dev/null | python3 -u /opt/krbrelayx/krbrelayx.py -hashes :<rc4> > krb.log 2>&1"
+   pwnloop x "ss -lntp | grep -E ':445|:80 '"     # this is the proof, not the banner
+   ```
+2. **The target can reach you.** Test egress *against a socket that accepts*. A closed
+   port and a filtered port are indistinguishable to `Test-NetConnection`, `nc -z` or a
+   SYN probe, so a sweep run with nothing listening reports everything blocked. Bind a
+   throwaway multi-port listener first, then sweep from the target — a shell on the box
+   is the cleanest place to do it:
+   ```powershell
+   foreach ($p in 445,80,443,8080,8443) { "$p = $((Test-NetConnection <you> -Port $p -WarningAction SilentlyContinue).TcpTestSucceeded)" }
+   ```
+3. **The key matches the ticket's etype.** A captured ticket is encrypted with the
+   account's key at whatever etype the KDC chose — for a machine account whose password
+   you just set, often RC4 rather than AES:
+   `Could not find the correct encryption key! Ticket is encrypted with keytype 23, but
+   keytype(s) 18 were supplied`. Supply both forms (`-hashes :<NT>` and `-aesKey <k>`);
+   the NT hash is just `MD4(pw.encode('utf-16-le'))`.
+
+The general rule: **a negative result is only evidence if the probe could have returned
+a positive one.** Verify the instrument, then believe what it says about the target.

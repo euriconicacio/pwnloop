@@ -48,6 +48,42 @@ environment and often a deploy or repository credential. A local service account
 running a scheduled deployment tool is worth reading precisely because it must
 authenticate to something to pull code.
 
+## Self-hosted git as a deployment platform (push = RCE)
+
+A self-hosted git server (Gitea, Forgejo, GitLab, or plain hooks) often *is* the
+deployment platform: a webhook, Actions runner, or `post-receive` hook copies a
+repo to a webroot or app directory on push. Treat write access to such a repo
+exactly like `master → node` above — it is code execution wherever the repo is
+deployed, at the next push. The tell is in plain sight: a repo readme or CI
+config that says "auto-deploy"/"CI/CD", a repo named `website`/`www`/`site`, or
+a deploy hook under the repo's settings. **Confirm the sink before spending a
+payload**: fetch a known repo file off the target's web port (e.g.
+`/changelog.txt`) — if it matches the repo, that server serves this repo, so a
+committed handler in the served language (`.aspx` on IIS, `.php`/`.jsp`
+elsewhere) will execute there. Push it, then poll the URL; deploys are usually
+seconds. The write credential is frequently a token leaked in history (see
+`references/source-review.md`) rather than a login. This same push→webroot
+channel is also a general **file-delivery** primitive: drop any binary you need
+onto a Windows target through it when SMB/`/drive` upload is unavailable.
+
+**Keeping anything alive past a CI job (Jenkins ProcessTreeKiller).** A pipeline
+step is a one-shot channel: when the build ends the runner reaps the whole process
+tree, so a tunnel or reverse shell you background from a `Jenkinsfile`/Action dies
+silently the moment the job finishes — you see it connect, then vanish. Jenkins
+identifies "its" processes by an environment variable (`JENKINS_NODE_COOKIE`, and
+older `BUILD_ID`); launch your persistent process with those overridden and
+detached from the job's session and file descriptors:
+
+```groovy
+sh 'JENKINS_NODE_COOKIE=dontKillMe setsid sh -c "./agent >/dev/null 2>&1 </dev/null &"'
+```
+
+Then re-establish it on demand: because the job re-runs on every push (poll or
+webhook), a self-contained step that re-launches the tunnel is a durable channel
+even if the process is killed. Beware one wedged build blocks later builds of the
+*same* branch job — push a *new branch* to get a second, independent job onto a
+free executor rather than waiting.
+
 ## When the platform is broken, fixing it is part of the exploit
 
 A master that hangs, times out or returns empty on every request may be

