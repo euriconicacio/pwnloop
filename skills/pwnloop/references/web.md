@@ -41,6 +41,25 @@ Same idea elsewhere: **Nuxt** `/_nuxt/builds/meta/*.json`, **Angular**
 original source). A `.map` file is the whole client source, unminified — always
 check for one next to any bundle you care about.
 
+**Server-rendered products leak their own version the same way — in asset
+paths, not headers.** A Java webapp built on a webjar/module layout emits its
+build version inside every static URL it renders
+(`/webjars/<artifact>/<version>/…`, `/<product>-platform-<module>-webjar/<version>/`),
+and a distribution package name often appears in a page comment or meta tag
+alongside it. So when `-sV` gives you a product name and a servlet container but
+no application version, do not stop at the banner and do not start fuzzing —
+render one page and grep it:
+
+```bash
+curl -s http://t:8080/<app>/ | grep -oiE '<product>[^"<]*[0-9]+\.[0-9]+\.[0-9]+' | sort -u
+```
+
+The distinction that matters is between the *container* version (Jetty, Tomcat —
+what nmap reports) and the *application* version (what the CVEs are written
+against). Nmap gives you the first and it is almost never the vulnerable half.
+Getting from "product X" to "X 15.10.8" is the entire difference between a CVE
+search that returns the intended path and one that returns nothing actionable.
+
 Fuzz afterwards for what the manifest cannot know about: server-only API routes,
 backup files, and anything outside the framework's own router.
 
@@ -466,6 +485,54 @@ Once a read lands, read the *deployment* before anything else: the web-server vh
 the document root), the systemd unit (it names the service user and every `ReadWritePaths=` grant),
 and the application source. A blind file-write primitive elsewhere in the estate becomes a targeted
 one the moment you know which single directory the service is permitted to write into.
+
+## A sanitiser applied to N-1 fields — audit the call sites, not the import
+
+An application that imports DOMPurify, uses `escape()`, or calls a `sanitize()` helper is not
+"an application that sanitises". It is an application with a sanitiser, and the question is how
+many of its sinks actually call it. The recurring shape on modern SPAs is a template literal
+assembled into `innerHTML` where every field is wrapped except one:
+
+```js
+<p>Report ID: ${DOMPurify.sanitize(report.id)}</p>
+<h3>Name: ${DOMPurify.sanitize(report.name)}</h3>
+<div>
+    ${report.details}          <!-- the free-text body -->
+</div>
+```
+
+The omitted field is nearly always the **longest free-text one** — a body, a description, a
+comment, a note — because the short identifier fields get written first and carefully, and the
+prose field gets added later by someone who is looking at working, apparently-safe code.
+
+How to audit it in one pass, before any payload:
+
+```bash
+# every interpolation into innerHTML, with its neighbours, so gaps are visible
+grep -nE 'innerHTML|insertAdjacentHTML|\$\{[a-zA-Z_.]+\}' index.html
+# then: for each render loop, count sanitise calls vs interpolated fields
+```
+
+If the counts differ, the difference is the sink. This beats blind XSS payloads because it tells you
+*which field*, and therefore which endpoint writes it, before you send anything.
+
+Three multipliers to check the moment a stored-XSS sink is found — together they turn a
+self-XSS-shaped bug into full account takeover, and each is a separate grep:
+
+- **A privileged viewer on a schedule.** A submission endpoint whose success message mentions
+  review, moderation, approval or an admin queue is telling you a bot opens the rendered page.
+  Confirm with a callback before writing a real payload; a headless-Chrome reviewer usually fires
+  within a minute.
+- **Session cookie readable by JS.** `SESSION_COOKIE_HTTPONLY = False` (Flask),
+  `httpOnly: false` (express-session), or the flag simply absent. Exfiltrating `document.cookie`
+  is then the whole attack — no need to drive the admin UI through the XSS.
+- **Registration open.** If anyone can create the account that submits the report, the bug is
+  reachable unauthenticated in practice.
+
+Note the direction of the escalation: the stored XSS is rarely the prize. It buys an admin session,
+and the admin session buys whatever *admin-only* endpoint is the real primitive (an export, a log
+reader, a user-impersonation route). Enumerate the admin API from the client's own JS as soon as the
+session lands, and rank those routes by how file-shaped their parameters are.
 
 ## User input written into a server-side script that is later executed
 

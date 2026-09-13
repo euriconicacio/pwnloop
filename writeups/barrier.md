@@ -1,4 +1,4 @@
-# Barrier — VulnLab (retired)
+# Barrier — Hack The Box (retired)
 
 **Linux**
 

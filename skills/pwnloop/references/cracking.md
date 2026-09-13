@@ -114,6 +114,46 @@ A sound KDF is not a strong password. A 10k-iteration PBKDF2 hash of a top-1 %
 wordlist entry falls in well under a minute on CPU — so run the wordlist before
 concluding an application's hashing "looks modern enough to skip".
 
+## No john format and no GPU: reimplement the verifier
+
+Some containers you will meet are exactly the wrong shape — a format john does not ship, and a
+hashcat mode that exists but has no OpenCL device to run on. That combination reads as "this is not
+crackable here", and it usually is not true. Every password-based container format has the same
+three parts, and all three sit in the file header in the clear:
+
+1. a **KDF** turning the passphrase into a key (iterated hash, PBKDF2, scrypt),
+2. a **verifier** — an HMAC or a known-plaintext block that says whether the key is right,
+3. the **parameters** (salt/IV, iteration count, encoding of the passphrase).
+
+If you can read the format's spec, you can write the guess-and-check loop yourself, and against
+OpenSSL in C it is fast enough that the wordlist, not the code, is the limit. Budget ten minutes;
+it beats debugging a cracker that has no device.
+
+Order of attempts, cheapest first:
+
+```bash
+hashcat -I                      # confirm the "no device" claim rather than assuming it
+john --list=formats | tr ',' '\n' | grep -i <keyword>
+gh search repos "<format> cracker"
+# then, and only then, write it
+```
+
+**Get the parameters by parsing the header in Python first**, print them as hex, and hard-code them
+into the C loop. Splitting it this way keeps the fiddly parsing out of the hot path and makes the
+constants reviewable.
+
+**Always test the loop against a passphrase you know before trusting a negative** — the same control
+discipline as the reformat dance above. An encoding mistake (UTF-16LE vs UTF-8 is the classic) and
+"not in rockyou" are indistinguishable otherwise.
+
+*Compact example of the class — AES Crypt v2, as written by `pyAesCrypt`:* header carries a 16-byte
+`iv1`, a 48-byte encrypted key block and its 32-byte HMAC-SHA256. The KDF is
+`digest = iv1 || 16 zero bytes`, then 8192 rounds of `digest = sha256(digest || passphrase-as-UTF-16LE)`;
+the guess is correct when `HMAC-SHA256(digest, keyblock)` matches the stored HMAC. Roughly fifty
+lines against `-lcrypto`, ~250 k candidates/second on one core. The shape — iterate a hash, verify
+with an HMAC over a key block — is shared by most archive formats, so the loop ports with the
+constants changed.
+
 ## Running it
 
 ```bash

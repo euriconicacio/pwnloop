@@ -64,6 +64,43 @@ Less-common but plantable privileges worth knowing:
   the Backup Operators → Domain Admin path, so audit that group on DCs.
 - **SeDebug** → dump lsass (`rundll32 comsvcs.dll MiniDump`) or inject.
 
+## A running Print Spooler is a SYSTEM primitive (PrintNightmare, CVE-2021-1675)
+
+When `whoami /priv` has no `SeImpersonate`, the box has no local misconfig
+(PowerUp clean), **and the Spooler service is running** (`sc query spooler` →
+RUNNING), the spooler itself is the escalation: `AddPrinterDriverEx` loads an
+attacker-supplied driver DLL and runs its `DllMain` as `NT AUTHORITY\SYSTEM`.
+Prefer the **local** variant on egress-blocked hosts — the DLL is loaded from the
+target's own disk, no callback needed (the remote/UNC variant needs the target to
+reach *out* to your share and dies when egress is filtered). Rank this class the
+moment egress tests come back blocked and no cheaper local vector exists.
+
+Getting the call to land (the errors are the map, none of them mean "patched"
+except a *consistent* access-denied with the warned flag set):
+- Define `DRIVER_INFO_2` + `AddPrinterDriverEx` with a plain C# **`Add-Type`**
+  P/Invoke — **PSReflect (`struct`/`func`) fails on PowerShell v2** (2008 R2),
+  which is exactly where you'll meet this.
+- `pDriverPath`/`pDataFile` must be a **valid, existing** driver DLL, and you must
+  reference a **copy** of it (copy `...\spool\drivers\x64\3\UNIDRV.DLL` to a
+  writable dir): referencing the in-use store file gives `ERROR_SHARING_VIOLATION
+  (32)`; a bogus path gives `ERROR_UNKNOWN_PRINTER_DRIVER (3014)`.
+- `pConfigFile` = your evil DLL (in the same writable dir). Flags =
+  `APD_COPY_ALL_FILES(0x4) | APD_COPY_FROM_DIRECTORY(0x10) | APD_INSTALL_WARNED_DRIVER(0x8000)`.
+  The `0x8000` warned-driver bit bypasses the signature check — omit it and you
+  get `ERROR_ACCESS_DENIED (5)`. The config DLL is loaded *during* the call.
+- Keep the payload a single quick action. `net user … /add` with a >14-char
+  password prompts `(Y/N)` and hangs the spooler-loaded DLL forever; use a
+  ≤14-char compliant password (or just have the DLL read the flag / drop a file —
+  you don't need a new account if you only want SYSTEM once).
+
+**PrintNightmare is destructive to the spooler — prove the primitive once, then
+fire the real payload once.** Every `AddPrinterDriverEx` installs a driver, and
+repeated calls (while tuning the trigger) wedge the spooler: new calls then hang
+indefinitely, the interactive session freezes, and the box needs a reset. Build
+and test your DLL/flags offline, confirm the mechanics with ONE call, and make the
+next call the one that reads the flag. See also the `patterns.md` "prove once,
+fire once" rule for destructive primitives.
+
 ## Service misconfigurations
 
 ```powershell

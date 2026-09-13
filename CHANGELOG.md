@@ -20,6 +20,98 @@ Engagements are expected to change the methodology (see `memory/patterns.md`),
 so minor releases are the normal cadence. An entry that says only "ran a box"
 does not belong here — what belongs is what the run *changed*.
 
+## [1.20.0] — 2026-09-13
+
+Four write-ups published — **Imagery** (Medium, Linux), **Manage** (Easy,
+Linux), **RetroTwo** (Easy, Windows / AD) and **Editor** (Easy, Linux) — taking
+the index from 50 to 54 chains and the rooted-machines count 51 → 55.
+
+The through-line this cycle is **an allow-list names a thing; it does not bind
+one**. Three of these four boxes fell to the same reasoning error on the
+defender's side: a control enumerates permitted *names* and then lets something
+else decide what each name resolves to. Once you look for that gap the exploit is
+never the hard part — the work is noticing that the list and the binding are two
+different mechanisms.
+
+`references/privesc-linux.md` carries both Linux halves. First, *sudo lets you
+create a principal the policy already trusts — the name is the vulnerability*: a
+rule like `NOPASSWD: /usr/sbin/adduser ^[a-zA-Z0-9]+$` is genuinely hardened
+against option injection, traversal and the two-argument group form, and still
+loses, because sudoers routinely grants rights to an account nobody has created
+yet and creating it inherits the grant. The entry includes how to reason toward
+the trusted name when `/etc/sudoers` is unreadable, which cheap alternatives to
+rule out explicitly so the lead does not loop, and the chicken-and-egg cleanup (a
+self-granting account cannot `userdel` itself; schedule it detached with
+`systemd-run --on-active`). Second, the *privileged helper with an allow-list of
+subcommands* joins the PATH-hijack class: a setuid shim exists so an unprivileged
+agent can run a fixed set of tools as root, and its hardcoded table constrains the
+program **name** while only an absolute path constrains **which program** that
+name reaches — so a supplementary group in `id` that exists solely to reach such
+a shim is itself the lead.
+
+The same file gains the run's own mistake as a rule: **a shell script is a bad
+payload for any setuid primitive.** `bash`, `dash` and `sh` reset euid to the
+real uid at startup unless given `-p`, so the vector fires perfectly and leaves
+artifacts owned by the unprivileged user — a silent failure that reads exactly
+like a patched target and sends you off doubting the CVE. The entry gives the
+one-line diagnostic (`id > /tmp/who` as the whole payload) and the rule that
+follows: judge a setuid payload by the *owner* of what it created, not by its
+exit status.
+
+`references/ad.md` states the Windows form of the same class: **a broad group you
+can join is the *source* of an ACE, not just a target of one.** Any authenticated
+user with `MachineAccountQuota>0` can create a computer, which is automatically a
+member of `Domain Computers`; whatever that group can do, your new computer can
+do. The chain worth walking is the second hop most people skip — seize a machine
+account via `ForceChangePassword`, then query what *that* account can do, because
+a machine account with `AddMember` over a group that nests into a logon group is
+interactive access to a DC.
+
+`references/web.md` adds the enumeration discipline that opened two of these
+boxes. **Server-rendered products leak their own version in asset paths, not
+headers** — a Java webapp emits its build version inside every static URL it
+renders, so the gap between the *container* version nmap reports (Jetty, Tomcat)
+and the *application* version the CVEs are written against closes with one `curl`
+and a `grep`, not with a scanner. And **a sanitiser applied to N−1 fields**: an
+application that imports DOMPurify is not an application that sanitises, it is an
+application with a sanitiser, and the question is how many of its sinks call it.
+Counting sanitise calls against interpolated fields in each render loop names the
+vulnerable field — and therefore the endpoint that writes it — before a single
+payload is sent.
+
+`references/privesc-windows.md` documents the Print Spooler as a SYSTEM primitive
+for the case that actually recurs: no `SeImpersonate`, PowerUp clean, spooler
+running. The **local** PrintNightmare variant is the one to rank when egress
+tests come back blocked, since the driver DLL is loaded from the target's own
+disk. The entry is mostly a map of the errors, because none of them mean
+"patched" except a consistent access-denied with the warned-driver flag set, and
+because the working call needs a real driver DLL *copied* out of the driver store
+(the in-use file gives a sharing violation) and a plain C# `Add-Type` P/Invoke
+(PSReflect fails on the PowerShell v2 you will actually meet on 2008 R2). It also
+carries the cost of getting this wrong: PrintNightmare is destructive to the
+spooler, repeated tuning calls wedge it, and this cycle that cost a box reset —
+so **prove the primitive once, then fire the real payload once.**
+
+`references/services.md` expands RMI/JMX now that a JMX port was the whole
+foothold on one box: `beanshooter enum` answers "does it require auth" with no
+credentials, and the step to take *before* any exploit is reading MBeans for
+secrets — a Tomcat JVM's `UserDatabase` MBean hands back realm passwords in
+cleartext even when the Manager app is IP-restricted, so a 403 there is not the
+end of the port.
+
+`references/artifacts.md` treats a Microsoft Access database as a credential
+store **including its macros**: a native ACE db is not an OLE/OOXML container, so
+`msoffcrypto-tool`/`olevba` refuse it outright and the path is `office2john` plus
+jackcess-encrypt — and the VBA project lives as OLE streams in the hidden
+`MSysAccessStorage` table, where a service account's LDAP bind password sits in
+cleartext in the source rather than in `strings` output.
+
+`references/cracking.md` adds the case where neither tool fits: no john format
+and no GPU for the hashcat mode reads as "not crackable here" and usually is not
+true. Every password-based container keeps its KDF, its verifier and its
+parameters in the header in the clear, so reimplementing the guess-and-check loop
+against OpenSSL is a ten-minute job that makes the wordlist the limit again.
+
 ## [1.19.0] — 2026-09-06
 
 Eight write-ups published — **Ten** (Hard, Linux), **Guardian** (Hard, Linux),
@@ -1218,7 +1310,9 @@ machines, both Linux (one easy, one medium).
 - Small sample, and no machine has defeated the loop yet — so its failure mode
   is still unobserved.
 
-[Unreleased]: https://github.com/euriconicacio/pwnloop/compare/v1.18.0...HEAD
+[Unreleased]: https://github.com/euriconicacio/pwnloop/compare/v1.20.0...HEAD
+[1.20.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.20.0
+[1.19.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.19.0
 [1.18.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.18.0
 [1.17.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.17.0
 [1.16.0]: https://github.com/euriconicacio/pwnloop/releases/tag/v1.16.0

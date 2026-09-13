@@ -69,6 +69,26 @@ pwnloop x "strings dump.sql | grep -iE 'insert into users|password'"
 ```
 Hashes go to `john` with the right format; identify first with `hashid`.
 
+**A Microsoft Access DB (`.mdb`/`.accdb`) is a credential store — and its *macros*
+are too.** Plain files: `mdb-tables`/`mdb-export` (mdbtools). If it is
+password-protected, `strings` shows an OOXML-style `<encryption ...>` blob — but
+do **not** reach for `msoffcrypto-tool`/`olevba`: a native ACE db (header
+`Standard ACE DB`) is not an OLE/OOXML container, so those refuse it. The path
+that works:
+```bash
+pwnloop x "office2john staff.accdb > h ; john --format=office --wordlist=rockyou.txt h"   # crack the db password
+```
+then decrypt+read with **jackcess + jackcess-encrypt** (Java): open with a
+`CryptCodecProvider(password)` and iterate tables. If a table looks empty, the
+data may be *deleted but recoverable* from the raw pages, and — crucially — the
+**VBA project lives as OLE streams in the hidden `MSysAccessStorage` table**. Pull
+the module stream and the `dir` stream, read `MODULEOFFSET` (record `0x0031`) from
+`dir`, and decompress the source at that offset with oletools'
+`olevba.decompress_stream` (MS-OVBA). Macros routinely hard-code a service
+account's LDAP bind password in cleartext — read the source, don't just dump
+strings. (A 15-line jackcess `Dump.java` and the offset-parsing python are the
+whole toolchain.)
+
 ## The habit
 
 After extracting anything, sweep the whole loot directory rather than the one

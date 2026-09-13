@@ -159,6 +159,47 @@ find / -perm -4000 -type f 2>/dev/null | sort   # more than one copy?
 dpkg -l sudo | tail -1                  # what the package manager believes
 ```
 
+## sudo lets you create a principal the policy already trusts — the name is the vulnerability
+
+When the allowed command is one that *mints or renames a security principal* —
+`adduser`/`useradd`/`groupadd`, `usermod`, or any wrapper that ends in a new
+username or group — the escalation is usually not in the command's *flags* but in
+*which name* you get to create. Sudoers and PAM routinely grant rights to a
+principal that **does not exist on the system yet**, and creating it inherits the
+grant. This is the same shape as the Kerberos-realm case below (*the realm can
+name your local root*): whoever may create a principal may pick which existing
+grant they land on.
+
+- **A hardened-looking arg regex does not close this.** A rule like
+  `useradmin ALL=(ALL) NOPASSWD: /usr/sbin/adduser ^[a-zA-Z0-9]+$` is deliberately
+  locked down — the anchored alnum class blocks option injection (`-`/`--shell`),
+  path traversal (`/`), and the two-arg `adduser <user> <group>` form (the space
+  fails the regex, so you *cannot* just add yourself to `sudo`). All of that is
+  real, and testing confirms a generic created user gets only its own group and
+  no rights. But the rule still lets you choose **any** alphanumeric name, and the
+  name is the whole attack: if `/etc/sudoers` (typically unreadable to you) says
+  `admin ALL=(ALL) ALL` for a user nobody created, then `sudo adduser admin`,
+  set its password at the prompt, `su - admin`, and you are root.
+- **You usually can't read the trusted name — reason about it.** `/etc/sudoers`
+  is `0440 root:root` and `sudo -l` shows only *your* rules, so the grant to the
+  missing principal is invisible. Look for it in readable provisioning
+  (cloud-init `user-data`, ansible, `/etc/sudoers.d/*` if any are world-readable)
+  first; if nothing, infer from the box's theme — the account named `useradmin`
+  ("the one who adds the admin") pointed straight at creating `admin`. Rule out
+  the cheap alternatives explicitly so you don't loop: a generic name (no rights),
+  a name colliding with an existing privileged group like `sudo` (`adduser`
+  refuses — group exists), orphan-UID/GID file adoption (needs an orphan-owned
+  sensitive file), and skel/home symlink tricks (need a writable `/etc/skel` or
+  `/home`).
+- **Cleanup is a chicken-and-egg problem — plan for it.** A self-granting account
+  cannot `userdel` itself while its session is live, and the low-priv account that
+  created it usually has no `deluser` right. Re-acquire root through the same rule
+  and schedule the removal detached from your session:
+  `sudo systemd-run --on-active=20 --unit=rm1 bash /tmp/x.sh` where the script does
+  `userdel -f -r <name>; groupdel <name>` (use `-r` or you strand the home).
+  `echo pw | sudo -S … < /dev/null` will silently fail — the redirect starves
+  `sudo -S` of the password; drop the `< /dev/null`.
+
 ## A privileged binary shadowed earlier on PATH
 
 Generalise the above: **a second copy of a SUID/privileged program, earlier on
@@ -189,6 +230,18 @@ Quick classes the sweep already surfaced:
   (`openssl passwd -1`), `su` to it. Writable `/etc/shadow` → same idea.
 - **PATH hijack** → a root cron/SUID/script calling a bare command (`tar`, not
   `/bin/tar`) with a PATH you can prepend → drop a malicious `tar` first in PATH.
+  The high-value variant is a **privileged helper with an allow-list of
+  subcommands**: a setuid shim exists so an unprivileged daemon can run a fixed
+  set of tools as root, and it maps `<thing>-info` onto a bare binary name. Read
+  the allow-list out of the binary (`strings` finds the subcommand table and the
+  program names next to it), then check *how* the name is resolved — an
+  allow-list constrains the **name** of the program, and only an absolute path
+  constrains **which program** that name reaches. If the lookup goes through
+  `$PATH`, every allowed subcommand is arbitrary root execution. Group-readable
+  setuid shims under a monitoring/agent install prefix are the usual home for
+  this, so a supplementary group in `id` that exists to reach one is itself the
+  lead. *(class: agent helper resolving tools via execvp instead of an absolute
+  path)*
 - **PwnKit (CVE-2021-4034)** — `pkexec` present and SUID is the give-away; a
   config bug, not a kernel bug, so it's safe to try early on older images.
 - **polkit/D-Bus** → `busctl list` for services running as root that expose a
@@ -226,7 +279,25 @@ matters when your foothold is a synchronous exec primitive with no TTY.
 Confirm you actually crossed the boundary before celebrating: `uid` non-zero with
 `euid=0` is the signature of a setuid binary rather than a login, and some
 payloads need `bash -p` to keep the euid.
-*(lame: `/usr/bin/nmap` 4.53 mode 4755 — `--interactive` plus its `!` escape,
+
+**A shell script is a bad payload for any setuid primitive — the interpreter
+throws the privilege away before your first line runs.** `bash`, `dash` and `sh`
+reset euid to the real uid at startup whenever they find `euid != uid`, unless
+started with `-p`; `perl` warns and refuses outright. So a hijacked-PATH helper,
+a writable root cron target, or any other vector that *executes a file you
+control with euid 0* will fire perfectly and still produce artifacts owned by
+your unprivileged user. The failure is silent and reads exactly like a failed
+exploit, which sends you off doubting the vulnerability, the version, or a
+backported patch.
+
+Diagnose it before re-litigating the vector: make the payload report its own
+identity (`id > /tmp/who` as its only content) and read the result. `euid=0`
+absent means the interpreter dropped it, not that the primitive failed. Fixes,
+in order of preference: a compiled C stub calling `setuid(0)/setgid(0)` before
+`execl`, or `#!/bin/bash -p` when you cannot compile on the target. Verify by
+the *owner* of what the payload created, not by its exit status — a payload that
+drops a setuid shell should leave a file owned by `root`, and `-rwsr-sr-x 1
+<you> <you>` is the signature of this exact trap.*(lame: `/usr/bin/nmap` 4.53 mode 4755 — `--interactive` plus its `!` escape,
 removed upstream in 5.20; two `echo | nmap --interactive` lines made a setuid
 shell)*
 
@@ -918,6 +989,59 @@ well before that. Instrument first (`id > /tmp/x` inside the script) to confirm 
 uid before assuming the class doesn't apply. Mitigation to recommend: whitelist
 directives / run a real `configtest` in a namespace, and anchor the blacklist after
 trimming whitespace.
+
+## A sudo target that re-authenticates with *your own* password is not a second factor
+
+A bespoke privileged tool reached through a `NOPASSWD` rule will often prompt for a password
+anyway, and the prompt reads like a second gate. Read what it validates before believing it:
+
+```python
+target_user = os.environ.get('SUDO_USER')        # the user sudo already trusted
+...
+system_password = get_password_securely(f"Enter system password for user '{target_user}': ")
+shadow_entry = spwd.getspnam(target_user)        # checks THAT user's /etc/shadow
+```
+
+This authenticates *identity*, which sudo settled before the process started. It never asks the
+authorization question — may this principal perform this action. So the prompt costs an attacker
+exactly one thing they already have: the password of the account they are standing in. If you
+reached that account by cracking a hash or reading a config, you are through.
+
+The tell is usually written down by the author: a comment or a help string naming the threat
+("secure against sudo NOPASSWD bypass", "requires system password verification"). Treat a named
+threat as a hypothesis to test, not as evidence the code answers it.
+
+**How to work a black-box sudo target** (root-owned, mode `0750`, source unreadable — you cannot
+grep for the sink):
+
+1. `--help` and every subcommand's help. Bespoke admin tools document their own dangerous features,
+   sometimes with the warning attached ("does NOT validate the safety of the --command").
+2. Enumerate the **whole** surface before committing — top-level flags as well as subcommands.
+   A reset/recover/`-R` style flag that clears the tool's *own* passphrase is the usual way past
+   an interactive lock, and it is typically gated on the same weak check as everything else.
+3. Rank the surface by what each feature ultimately *writes*: a job/cron/schedule feature, a
+   config-file writer, a hook/plugin path, a `--exec`/`--command` option. Anything that persists a
+   command string runs it as root later, with no argument parsing left to fight.
+4. Only then read the binary as root, to confirm you understood the mechanism rather than got lucky.
+
+Any "run this later" feature (`auto add --command`, a backup pre/post hook, a scheduled task) is the
+shortest path: it is a string, it is stored, and cron will run it as root with no further checks.
+The same class covers config-is-a-command-list tools already described above — the difference here
+is that the gate *looks* like authentication and is not.
+
+**A prompt-driven tool needs a real pty, not a pipe.** `getpass()` reads `/dev/tty`, so
+`printf pw | sudo tool` and `ssh -tt host 'printf pw | tool'` both fail — the bytes go to the
+process's stdin, and the prompt is reading somewhere else. Drive it with `expect` against an ssh
+pty, and remember `Defaults use_pty` in sudoers makes this mandatory rather than optional:
+
+```expect
+spawn ssh -i key -q user@target sudo /usr/local/bin/tool shell
+expect "tool> "
+send "auto add --schedule \"* * * * *\" --command \"<cmd>\" --name j\r"
+expect { -re "password.*: " { send "$PW\r"; exp_continue }
+         "tool> "           { send "exit\r" } }
+expect eof
+```
 
 ## Confirm and record
 
