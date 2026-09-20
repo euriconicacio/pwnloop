@@ -468,7 +468,17 @@ Two distinct wins depending on the auth mode:
   in Responder's `MSSQL-Cleartext-*` log, not a hash to crack.
 - **Windows/self-mapping (`RPC OUT`)** — `EXEC (...) AT [LINK]` runs SQL on the
   far side as *its* context; chain to `xp_cmdshell` if the remote login is
-  privileged. A link that self-maps to a sysadmin is lateral RCE.
+  privileged. A link that self-maps to a sysadmin is lateral RCE. The link can
+  point into a **separate forest** (watch the DNS suffix of the datasource) — a
+  guest on one DC's SQL becomes sysadmin RCE on another forest's DC.
+  - Enabling `xp_cmdshell` over a link fights nested quoting: `EXEC ('sp_configure
+    ...; RECONFIGURE') AT [LINK]` mangles the doubled quotes. Use **four-part
+    naming** for the config calls and a separate `EXEC (N'RECONFIGURE') AT [LINK]`:
+    `EXEC [LINK].master.dbo.sp_configure 'show advanced options',1` then
+    `... 'xp_cmdshell',1`. Then run commands with the nested form
+    `EXEC (N'EXEC xp_cmdshell ''whoami''') AT [LINK]`. Driving this from a tiny
+    impacket `tds` script (build the query in Python) beats escaping through
+    `nxc -q`/bash.
 
 The class here: *a service that dials a name you can define is a credential/relay
 primitive.* A linked server pointed at an NXDOMAIN host is the tell — the box
@@ -573,6 +583,43 @@ Internal SMTP that accepts mail is a phishing/second-order-XSS vector when a
 human or bot reads it. Read any mailbox you get creds for — passwords land in
 inboxes.
 
+**Mail as a delivery channel to an automated document opener.** When a site says
+"email your CV/invoice/document to `x@dom`" and `RCPT TO:<x@dom>` is accepted
+unauthenticated, a bot on the host opens what you send. That makes SMTP a foothold
+delivery mechanism for a client-side document CVE, and the win is *not* a document
+macro (usually disabled). Method:
+1. **Confirm the opener and egress cheaply first.** Send the document with an
+   external reference (an image `xlink:href` / linked frame pointing at your HTTP
+   listener). A fetch on open proves the doc is rendered and that egress works,
+   *independently* of whether code ran — so a later "no callback" tells you the
+   payload failed, not that nobody opened it.
+2. **Pin the office suite and hunt open-on-load CVEs**, not just macro settings.
+   For LibreOffice the class is a `macro:`-scheme dispatch of a *built-in* function
+   from a document event (e.g. an `office:load-finished` listener) that fires with
+   no macro-security prompt — a different mechanism from a document Basic macro,
+   so it survives "macros disabled". Read the CVE/PoC for the exact XML sink, then
+   deliver a native-LOLBin command (see `references/evasion.md` for AppLocker).
+
+**hMailServer (Windows) is a recurring privesc pivot.** It runs as **LocalSystem**
+and keeps secrets on disk:
+- `hMailServer.ini` → `[Security] AdministratorPassword` is an **unsalted MD5**
+  (crack it) and `[Database] Password` is a Blowfish blob decryptable with the
+  hardcoded key `THIS_KEY_IS_NOT_SECRET`. The admin password is the mail-server
+  admin, *not* necessarily the Windows account — test scope before assuming reuse.
+- The MSSQL-CE `hMailServer.sdf` is encrypted at rest (no readable table/row
+  strings) — that absence itself is the tell.
+- The real lever is often a **server-side event script** (`Events\EventHandlers.vbs`)
+  that runs as SYSTEM on incoming mail. If any active handler builds a filesystem
+  path from an attacker-controlled field (e.g. `saveas("…\" & attachment.filename)`),
+  a path-traversal filename (`..\..\inetpub\wwwroot\shell.aspx`) is an **arbitrary
+  file write as SYSTEM** — see `references/privesc-windows.md` for turning that
+  write into execution. Note the script is compiled at service start; overwriting
+  the `.vbs` does nothing until a reload you usually cannot trigger, so exploit the
+  handler that is *already loaded* rather than trying to replace it.
+The transferable class: *a service running as SYSTEM whose server-side logic trusts
+a client-supplied path or value.* Same shape as a print processor, a backup job, or
+a queue worker that names files from the message.
+
 ## rsync (873)
 
 ```bash
@@ -666,11 +713,42 @@ credentials and tokens.
 
 - **Zabbix** (`10051`/web) → agent `system.run` RCE, or web default creds
   `Admin:zabbix`.
+  - **Pin the exact version first (`apiinfo.version` is unauthenticated), then
+    check whether *guest* login is on** (`index.php?enter=guest`, or the login
+    page's "sign in as guest" link). A guest session is a credential: it can
+    browse Latest data / Problems and, more usefully, invoke **global scripts**
+    straight at the trapper (`{"request":"command","sid":..,"scriptid":..,
+    "hostid":..,"clientip":..}` to `10051`), which returns output in-band — no
+    egress needed. Enumerate reachable hosts by sending `active checks` for
+    candidate host names until one is not "host not found".
+  - **A monitoring product's audit log is an attacker-fed SQL sink.** Zabbix,
+    like most, records the *request metadata* of privileged actions (here the
+    `clientip` of a script-execution request) into an audit `INSERT`. When that
+    field is concatenated unescaped it is blind SQLi reachable by whoever can
+    trigger the action — a guest, in the guest-login case. Confirm with a timing
+    payload in the metadata field (`1' + (select sleep(5)) + '1`); the oracle is
+    the response time of a call you already make, so it works with zero egress.
+    Then extract a **live privileged `sessionid` from the session table** and
+    present it as the API auth token (`Authorization: Bearer <sid>`) — session
+    theft beats hash-cracking. (Version-pinned CVE example kept in `local.md`.)
+  - Once you hold an admin API session, a global script with
+    `execute_on = Zabbix server` runs shell on the server host and hands the
+    output back in the API response.
 - **IPMI** (`623/udp`) → `nmap --script ipmi-cipher-zero`;
   dump the RAKP hash and crack (`ipmitool`/`msf ipmi_dumphashes`).
 - **VNC** (`5900`) → `nmap --script realvnc-auth-bypass`; captured `.vnc`
   passwords decrypt with `vncpwd`.
 - **X11** (`6000`) → `xwd`/`xdotool` over an open display to screenshot/keylog.
+- **A host-diagnostic page that lists processes is a credential source.** Any
+  endpoint that renders `ps`-style output with full argument vectors —
+  phpSysInfo with the `ps` plugin (`?plugin=ps&json`), a `/server-status` with
+  `ExtendedStatus`, a Netdata/Glances/monit process panel — discloses every
+  secret passed on a command line: `curl -u user:pass`, `mysql -pPASS`,
+  `openvpn --auth-user-pass`, a token in a cron `wget`. Read the whole process
+  table before assuming it is noise, and poll it across a minute to catch
+  transient cron children (a job that leaks a password only exists on the wire
+  while it runs). phpSysInfo itself is often behind weak Basic auth
+  (`admin:admin`); the diagnostic value to *you* is the argv leak, not the CVE.
 
 ## PostgreSQL / MSSQL RCE (beyond the creds check in the DB section)
 

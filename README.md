@@ -143,7 +143,7 @@ every time it runs, because the run is required to write back into it.
 
 | | run | published as |
 |---|---|---|
-| **Machines** | 55 rooted, Easy through Insane, Linux / Windows / AD / k8s / OT / wireless | [`writeups/`](writeups/) — 54 full chains, retired targets only |
+| **Machines** | 61 rooted, Easy through Insane, Linux / Windows / AD / k8s / OT / wireless | [`writeups/`](writeups/) — 60 full chains, retired targets only |
 | **Pro Labs** | 1 completed — 3/3 hosts, 4/4 flags | [`labs.md`](labs.md) — results and methodology only, never a chain |
 
 Two different bars on purpose. A retired machine can be published in full, so its

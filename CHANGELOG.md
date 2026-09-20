@@ -20,6 +20,61 @@ Engagements are expected to change the methodology (see `memory/patterns.md`),
 so minor releases are the normal cadence. An entry that says only "ran a box"
 does not belong here — what belongs is what the run *changed*.
 
+## [1.21.0] — 2026-09-19
+
+Six pending write-ups published — **DarkZero** (Hard, Windows / AD), **JOB**
+(Medium, Windows), **media** (Medium, Windows), **Outbound** (Easy, Linux),
+**race** (Hard, Linux) and **watcher** (Medium, Linux) — taking the index from
+54 to 60 chains. The rooted-machines count had drifted behind reality: six boxes
+were rooted but never counted, so this release also **reconciles the metric
+55 → 61** (60 published chains plus one rooted-only machine held back from
+publication).
+
+The through-line across the Windows boxes is **a stripped service token is not a
+missing privilege**. On both DarkZero and media the service account runs without
+`SeImpersonate` in the shell you land in — the obvious potato is off the table —
+but the privilege is only absent from the *restricted/network* token; the
+account's service-logon token still carries it. media restores it with
+`FullPowers`; DarkZero recovers it by making the SMB redirector re-authenticate
+the account to a local named pipe and impersonating the client. Either way the
+lesson is the same: when `whoami /priv` is short on a service account, check
+whether the privilege was *removed* or merely *filtered* before abandoning the
+potato path.
+
+`references/services.md` gains the run's self-found addition to the MSSQL
+linked-server section: a linked server can self-map into a **separate forest**,
+so a `guest` on one DC's SQL becomes `sysadmin` RCE on another forest's DC — and
+enabling `xp_cmdshell` across the link needs **four-part naming**
+(`EXEC [LINK].master.dbo.sp_configure …`) because the nested-quote `EXEC(…) AT`
+form mangles the doubled quotes; driving it from a small impacket `tds` script
+beats escaping through the shell.
+
+The rest of the `references/` tree gains the write-back these six engagements
+produced. `web.md`: an upload that a person or bot later *opens* is a client-side
+NTLM coercion (media's WMP/ASX UNC), and a CMS's own deny rules plus stock
+features leak what you need (the Grav 403/404 existence oracle and
+backup-as-read-primitive from race). `privesc-linux.md`: a root process that
+follows a symlink you planted to write its *own* output, and a root job that
+checksum-validates a file then executes it (a TOCTOU the `race` box is named
+after), plus reading a privileged script that authenticates through a writable
+web root (watcher/outbound). `privesc-windows.md`: arbitrary file write as SYSTEM
+turned into execution (JOB's `PHISH` handler, media's junction). `evasion.md`:
+AppLocker that blocks PowerShell but still runs native LOLBins (JOB).
+`devops.md`: a CI server's build runner is command execution as whatever the
+agent runs as (watcher's root TeamCity agent). `cracking.md`: a cracker that
+returns instantly having "recovered" nothing may never have run — check for a
+held instance lock (JOB).
+
+`memory/local.md` records three method notes from the DarkZero run: do not stack
+blocking helper processes on a low-RAM target (it DoSes the box and severs your
+own channel — this run wedged a 2 GB DC and needed a reset); get one clean
+interactive context early instead of iterating blind multi-step commands through
+a slow linked-server `xp_cmdshell`; and for an unconstrained-delegation TGT
+capture, the *trigger* decides whether the forwarded ticket persists — an
+incidental file-touch (`xp_dirtree`) can tear the session down before the ticket
+caches, while a real coercion primitive (MS-EFSRPC / MS-DFSNM) leaves it long
+enough for the monitor to catch.
+
 ## [1.20.0] — 2026-09-13
 
 Four write-ups published — **Imagery** (Medium, Linux), **Manage** (Easy,

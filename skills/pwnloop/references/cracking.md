@@ -218,8 +218,23 @@ done
 Never brute force SSH as root on a lab box — it is not the intended path and it
 is noisy enough to disrupt other users of a shared network.
 
+## The tool must actually have run
+
+A cracker that returns in a second with `Recovered 0` has not necessarily *run*.
+hashcat refuses to start a second instance while another is alive and prints
+`Already an instance '/usr/bin/hashcat' running on pid N`, then exits 0 — so a
+forgotten background job (or a zombie whose parent you killed) silently no-ops
+every crack you launch after it. If a wordlist+rules attack you expected to take
+minutes finishes instantly with nothing, before concluding "not crackable":
+check for a running/zombie instance (`pgrep -a hashcat`), kill it, and re-run
+once. The same discipline applies to any singleton tool — read its first lines,
+don't just trust a fast empty result.
+
 ## After a crack
 
 Every recovered plaintext goes into the ledger's credential table and is then
 tried against **every** service and **every** user on the box. Password reuse
-resolves more lab machines than cracking itself does.
+resolves more lab machines than cracking itself does. But test scope before
+concluding reuse: a service's own admin password (e.g. a mail server's) is often
+*not* the Windows/domain password — confirm against each service rather than
+assuming the crack unlocks everything.

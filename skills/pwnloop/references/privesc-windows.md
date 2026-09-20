@@ -49,6 +49,34 @@ read the full output. `SeImpersonate` absent → potatoes are the wrong tool
 entirely; look at the other privileges below, or (on a DC) the local Kerberos
 relay in `references/ad.md`.
 
+## Arbitrary file write as SYSTEM → execution
+
+A primitive that lets you write an arbitrary file as SYSTEM (a service that saves
+attacker-named files, `SeRestore`/`SeTakeOwnership`, a symlink/path-traversal bug)
+is **write, not exec** — you still need something to run the file. Pick the router
+by what will execute it *without your help*:
+
+- **You can make the SYSTEM writer re-execute your file** → overwrite what it
+  runs (a service binary/DLL, a scheduled-task script) and trigger it. Blocked if
+  you cannot restart the service or the script is cached until reload — a common
+  wall; don't waste time trying to force a reload you have no right to.
+- **You cannot re-trigger the writer** → route the write through a *different*
+  process that will execute it for you. On a box with IIS this is the reliable
+  move: SYSTEM-write an `.aspx` webshell into the webroot (`C:\inetpub\wwwroot`
+  via `..\..\inetpub\wwwroot\s.aspx`), request it, and you land as the app-pool
+  identity — which on IIS holds `SeImpersonatePrivilege` by default, so a potato
+  finishes the job to SYSTEM. The file being *owned* by SYSTEM doesn't matter; it
+  still runs as the worker identity. (Consequence for cleanup: you then need
+  SYSTEM again to delete that SYSTEM-owned webshell — keep your potato staged
+  until the webshell is gone, and self-delete the potato last with a detached
+  `del` so it isn't removing its own running image.)
+- **Phantom-DLL / known auto-load paths** — drop a DLL a SYSTEM process loads on
+  its next start (see `SeManageVolume` below).
+
+The general rule: an arbitrary-write-as-SYSTEM is only as good as the nearest
+process that will execute what you wrote — enumerate those before engineering the
+write.
+
 Less-common but plantable privileges worth knowing:
 
 - **SeManageVolume** → open a handle to the volume, gain write into

