@@ -100,3 +100,40 @@ So the escape is usually already on disk:
 
 See `references/foothold.md` for the payload catalog itself; this file is only
 about getting past the thing that blocks it.
+
+## GUI / kiosk application escape (Assigned Access, Shell Launcher, kiosk browsers)
+
+A Windows host that exposes only RDP and drops you into a single locked
+application (a kiosk browser, a "conference display", a locked Explorer) is a
+*kiosk-escape* target, not a broken host. Enumerate the escape surface
+**top-down, cheapest first** — the recurring failure is to burn an hour deep in
+the locked app's restricted file dialog before trying the shell itself.
+
+1. **The shell / hotkeys come first.** Press the plain **Windows key**, then
+   `Ctrl+Esc`, `Ctrl+Shift+Esc` (Task Manager), `Win+R`, `Win+E`. Assigned-Access
+   and Shell-Launcher lockdowns frequently leave the **Start menu** reachable; if
+   it is, search-and-launch a *second, full* instance of a browser or any allowed
+   app. A full browser has a real address bar and real downloads — that single
+   step dissolves every restriction the *locked* instance imposed.
+2. **A full browser's address bar is a filesystem + execution primitive.**
+   `file:///C:/` browses the disk (bypasses `NoViewOnDrive`, which only filters
+   the *shell's* drive view, not the browser); read flags and config straight out
+   of `file:///C:/Users/<u>/Desktop/`. Navigating to an executable triggers a
+   download.
+3. **App allow-lists that match by executable *name* fall to a rename.** If only
+   e.g. the browser's own EXE is allowed to run, copy a shell binary to a
+   writable folder *under the allowed name* and launch it. The clean way to do the
+   rename is the **browser's own "Save As"** at download time (enable "ask where
+   to save each download" first) — an Explorer rename of an EXE is often
+   policy-blocked while the Save-As is not.
+4. **Only then** fall back to the locked app's `Ctrl+O`/`Ctrl+P` common dialog
+   (type a path to launch, address-bar command, right-click→Open, Help→browser).
+   On a hardened kiosk these are usually the *most* restricted path, not the
+   first thing to try.
+
+Rule of thumb: rank kiosk-escape vectors by how much of the OS shell they reuse
+(Start menu > full browser > file dialog), and treat "the locked app blocks X"
+as a reason to leave the locked app, not to keep fighting it. Privesc from the
+escaped context is ordinary Windows (see `references/privesc-windows.md`):
+reversibly-stored local creds, then a local admin self-elevating through a
+default-UAC consent prompt (`Start-Process <x> -Verb RunAs`).

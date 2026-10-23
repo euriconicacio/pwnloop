@@ -92,6 +92,34 @@ Less-common but plantable privileges worth knowing:
   the Backup Operators → Domain Admin path, so audit that group on DCs.
 - **SeDebug** → dump lsass (`rundll32 comsvcs.dll MiniDump`) or inject.
 
+**An AD backup on disk is a DCSync regardless of any AD right.** The
+`SeBackup → NTDS.dit` path above assumes you *hold* the privilege. The cheaper,
+commoner lab mistake is a **copy of the backup left readable on the filesystem**:
+a `Backups\Active Directory\ntds.dit` plus `Backups\registry\{SYSTEM,SECURITY}`
+sitting world-readable on a share or in a profile. Then you need no Backup
+Operators membership, no VSS, no privilege at all — just the read. Pull the three
+files and `impacket-secretsdump -ntds ntds.dit -system SYSTEM [-security SECURITY]
+LOCAL` dumps every hash including `krbtgt` and `Administrator`. So when a box
+talks about "backups" (a note, a `Backups\` folder, a scheduled job), enumerate
+for a loose `ntds.dit` *before* assuming you must earn `SeBackupPrivilege` — and
+check the SYSTEM hive is paired with it, since the boot key lives there.
+
+## WSL is an in-box Linux pivot (and DrvFs privilege ≠ Windows privilege)
+
+A Windows host — a DC included — with **OpenSSH on a non-standard port** (2222 is
+the tell) is often a **WSL** instance. Log in with any Linux credential/key you
+find (keys get stashed on shares with a "we're moving backups to Linux"-style
+note), and a `sudo NOPASSWD: ALL` there is Linux root. But WSL root is *not*
+Windows privilege: `/mnt/c` is a **DrvFs** mount carrying the identity that
+launched the distro (usually unprivileged), so Administrator's profile,
+`C:\Windows\NTDS`, and protected files stay **Permission denied** even as `root`.
+What it *does* give you is a second, Linux-flavoured view of `C:\` with its own
+ACL evaluation — so it is a loot surface: walk `/mnt/c` for world-readable
+secrets (the loose `ntds.dit` above, config, keys) that the Windows ACLs would
+have hidden from your Windows user. Treat `/mnt/c` and WSL `sudo` as part of the
+Windows attack surface, but reach for a *credential/backup you can read*, not for
+`cat`-ing the flag directly.
+
 ## A running Print Spooler is a SYSTEM primitive (PrintNightmare, CVE-2021-1675)
 
 When `whoami /priv` has no `SeImpersonate`, the box has no local misconfig
@@ -372,6 +400,33 @@ Read every screenshot before the next action. Deliver `.exe` helpers through
 whatever file-write primitive you already have (e.g. a git→webroot CI/CD deploy)
 since drive redirection needs FUSE. Packages: `freerdp3-x11 xdotool imagemagick
 mingw-w64`.
+
+## Third-party agents (monitoring/backup) run as SYSTEM — enumerate installed products, then race their temp files
+
+Enumerate installed software early (`Get-ItemProperty HKLM:\SOFTWARE\...\Uninstall\*`
+and the `Installer\UserData\S-1-5-18\Products\*\InstallProperties` hive — the latter
+also gives the cached MSI `LocalPackage`). A monitoring/backup **agent** (Check MK,
+Nagios, Zabbix, PRTG, Veeam …) almost always runs as SYSTEM and is a prime local
+privesc target: pin its version and look up its CVEs.
+
+A recurring class is a SYSTEM service that executes helper scripts from a
+**predictable, world-writable path** (e.g. `cmk_all_<PID>_<ctr>.cmd` in
+`C:\Windows\Temp`). Win the race by pre-seeding those names, then forcing the run:
+
+- **Seed the files read-only.** If they are writable, the SYSTEM process overwrites
+  them with its own content and you lose; read-only makes it execute *yours*.
+- **Cover the whole PID space.** The `<PID>` is a transient child, not the stable
+  service PID — a narrow range simply never wins. Windows PIDs are multiples of 4,
+  so step by 4 up to ~45000 for full coverage at a quarter of the files.
+- **Trigger in the right identity.** An MSI-repair trigger (`msiexec /fa <cached.msi>
+  /qn`) runs custom actions as SYSTEM, but repair uses the *original installer's*
+  context — run the trigger as the account that installed the product (RunasCs) or it
+  won't fire. Note who installed it before assuming your own context works.
+- Return the result **in-band** (write `root.txt` to a readable temp path) rather than
+  a reverse shell — one less egress dependency, and the payload is a plain `.cmd`.
+
+Note `C:\Windows\Temp` is writable by normal users but **not listable** — you can seed
+and `Test-Path` there but not `dir` it, so verify by hitting exact names.
 
 ## Backstop
 

@@ -94,6 +94,34 @@ host escape by itself — it's a cluster credential. Enumerate its RBAC and go f
 `nodes/proxy`, a privileged pod, or a hostPath mount. See
 `references/kubernetes.md`.
 
+## A sudo/privileged wrapper around a container runtime (runc/ctr/crictl)
+
+A "restricted debug wrapper" that lets a low-priv user drive `runc`/`ctr`/
+`crictl` as root is a container-runtime-as-root primitive, and the restriction is
+usually thinner than it looks. Two independent weaknesses to check:
+
+- **The bundle comes from a directory you control.** `runc run <id>` reads
+  `./config.json` and `./rootfs` from the *current working directory*. If the
+  wrapper does not pin the bundle path, run it from a dir you own and supply your
+  own OCI spec — caps, `noNewPrivileges:false`, and any mounts you like. Confirm
+  by reading the wrapper's error: `invalid rootfs: stat <cwd>/rootfs` tells you
+  the cwd is the bundle root.
+- **Mount filters are string checks, not path checks.** The wrapper may reject a
+  mount `source` of `"/"` ("host root filesystem not permitted") — but a literal
+  string compare is defeated by any path that *resolves* to `/` without equalling
+  it: **`"/."`**, `"//"`, `"/../"`, `"/proc/1/root"`, or a symlink you create.
+  rbind that into the container (`"/host"`) and you have the host filesystem as
+  root. The clean fix the author missed is `realpath`/`filepath.EvalSymlinks` on
+  every source plus a containment deny-list — the same lesson as sudo config
+  wrappers in `privesc-linux.md`.
+
+`pivot_root` into host `/` directly (`root.path:"/"`) often fails *device or
+resource busy* — don't read that as "blocked". Use a minimal rootfs (bind the
+host `/bin /lib /lib64 /usr /sbin` in read-only so a shell resolves) and rbind
+host `/` (via `/.`) to `/host`, then operate on `/host`: drop a `chmod 6777`
+SUID shell and read the flag. Clean up the SUID file (unlink it from inside a
+`-p` shell — a process can remove itself) and `runc delete` any leftover state.
+
 ## After escaping
 
 Verify you're on the host, not another container (`hostname`, `mount`, the

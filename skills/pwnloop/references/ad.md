@@ -339,6 +339,83 @@ Unconstrained then costs a coercion (`references/relay.md`) and a resolvable nam
 the fake host (ADIDNS, above) — constrained costs neither, which is why it is worth one
 command to find out whether it is available before committing to the longer chain.
 
+## A service account's secret is a Kerberos KEY, not just a password
+
+The moment you crack or otherwise obtain a service account's password/hash (a
+Kerberoast, an `xp_dirtree`/coercion + crack, a config leak), you hold the key
+that account uses to *decrypt* service tickets. That means you can **forge a
+silver ticket offline** — a TGS for any SPN registered to that account, encrypted
+with its key — and present it straight to the service. **No KDC is contacted.**
+
+This reframes a firewalled DC. "Port 88 is filtered, so no Kerberos attacks" is
+the trap: AS-REP/Kerberoast/`getTGT` all need the KDC and will indeed time out,
+but a *silver* ticket needs only the target service's own port. If the one port
+you can reach belongs to a service whose account key you hold, you are not stuck —
+you are one offline forge away from authenticating to it, and you can put **any
+group membership you like into the PAC** because the service trusts what its own
+key decrypts. Rank this technique *before* declaring a KDC-blocked box a dead end.
+
+```bash
+# NT hash of a known password:  python3 -c "import hashlib;print(hashlib.new('md4','<pw>'.encode('utf-16le')).hexdigest())"
+pwnloop x "impacket-ticketer -nthash <acct-hash> -domain-sid <DOMAIN-SID> \
+    -domain <realm> -spn <service>/<host>:<port> \
+    -groups <priv-group-rid> -extra-sid <full-SID> -user-id <acct-rid> <acct>"
+KRB5CCNAME=<acct>.ccache pwnloop x "<tool> -no-pass -k <host.fqdn>"
+```
+
+Get `<DOMAIN-SID>` right to the byte — the RIDs you inject are relative to it, so a
+wrong domain SID silently produces group SIDs that match nothing and the login
+just "fails" (`impacket-lookupsid`, or parse `SUSER_SID()` output; verify the mssqlsvc/known
+RID resolves before trusting your conversion).
+
+**Worked class — MSSQL where a *domain group* is a sysadmin login** (e.g. the SQL
+server firewalled to 1433 only, `guest` login, but `SIGNED\IT` sits in the
+`sysadmin` role). Enumerate the group's RID with `SUSER_SID('<dom>\<group>')`,
+forge a silver ticket for `MSSQLSvc/<host>:1433` and inject that RID with
+`-groups` → you authenticate as sysadmin without ever touching the KDC. Two gotchas
+that cost real time:
+
+- **Connect *as the service account itself*** (`-user-id` = the service account's
+  own RID, not ticketer's default `500`). If the ticket's user RID is someone else
+  (500 → `Administrator`), `OPENROWSET(BULK ...)` must cross-impersonate that Windows
+  identity and dies with **OS error 1346** ("required impersonation level not
+  provided"). As the service's own identity there is no impersonation hop.
+- **For arbitrary file read as admin**, inject `-extra-sid S-1-5-32-544`
+  (BUILTIN\Administrators) too. Then `SELECT BulkColumn FROM OPENROWSET(BULK
+  '<path>', SINGLE_CLOB)` reads any file (flags, PowerShell history, SAM copies)
+  with a local-admin token — often a cleaner root than a potato, since the
+  `xp_cmdshell` token has `SeImpersonate` stripped by SQL Server anyway.
+
+**Defensively**: the fix is not "rotate the password" alone — it is that a domain
+*group* granted `sysadmin` (or a service key with a weak password) turns one
+crack into service-level compromise. Grant SQL roles to named principals, keep
+service-account passwords long/random (silver tickets are unstoppable once the key
+is out), and enable PAC validation where the service supports it.
+
+## A recovered hash on a Kerberos-only (NTLM-disabled) domain → overpass-the-hash
+
+When you recover an NT hash or AES key — from an offline `secretsdump`, a DPAPI
+blob, LSASS, a backup — the reflex is pass-the-hash (`-hashes`). On a domain with
+**NTLM disabled** (SMB `(NTLM:False)`, signing required, "Kerberos-only") PtH is
+dead: the hash never gets to authenticate because NTLM is refused at the wire.
+The hash/key is still a *Kerberos* credential, so convert it to a TGT and carry
+on over Kerberos — **overpass-the-hash**:
+
+```bash
+# prefer the AES256 key if secretsdump gave you one (RC4/NTLM may be refused by policy)
+pwnloop x "faketime -f +<skew> impacket-getTGT -dc-ip $T -aesKey <aes256> <realm>/<user>"
+# or with the NT hash:
+pwnloop x "faketime -f +<skew> impacket-getTGT -dc-ip $T -hashes :<nthash> <realm>/<user>"
+KRB5CCNAME=<user>.ccache pwnloop x "<tool> -k -no-pass dc.<realm>"   # PSRP/SMB/secretsdump over Kerberos
+```
+
+The decision rule: the instant SMB enum shows NTLM disabled, drop `-hashes`
+(PtH / NTLM psexec) from your plan and route *every* recovered secret through
+`getTGT` → ccache. A DC time skew is normal on these boxes — drive all Kerberos
+tooling under `faketime -f +<skew>` or every ticket is rejected as clock-skewed.
+AES256 beats the NT hash here because a hardened domain often disables RC4, and a
+raw NT hash forces RC4 for the AS-REQ.
+
 ## DCSync and the domain
 
 ```bash

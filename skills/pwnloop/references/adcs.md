@@ -42,7 +42,30 @@ pwnloop x "certipy req -u <u>@<dom> -p <p> -dc-ip $T -ca <CA> -template <T> \
 pwnloop x "certipy auth -pfx administrator.pfx -dc-ip $T"     # → TGT + NT hash
 ```
 Get the admin SID from `certipy find`, `nxc`, or an LDAP dump. Omitting it fails
-on patched DCs (strong mapping).
+on patched DCs (strong mapping). Use the **real** domain SID — a guessed prefix
+issues fine but `certipy auth` then rejects it with "Object SID mismatch".
+
+**Read the full enrollment list, not just `-vulnerable`.** The `-vulnerable`
+summary may print only one enrollment right (e.g. "Domain Admins") while the full
+`certipy find -stdout` block lists more — frequently **`Domain Computers`**. If so,
+*any machine account you control is a valid enrollee*: a cracked/pre-created
+computer (or one you add via MAQ) enrols the Domain-Admin cert. Rank a machine-
+account foothold as an ESC1 enrollee, not a dead end.
+
+**Two request-time gates that look like failure:**
+- `CERTSRV_E_KEY_LENGTH` → the template's `Minimum RSA Key Length` (read it in
+  `certipy find`) exceeds certipy's 2048 default. Pass `-key-size 4096`.
+- RPC enrolment over Kerberos can intermittently `NETBIOS connection timed out`;
+  it is transport flakiness — loop the `certipy req` a few times before doubting
+  the rights.
+
+**PKINIT disabled is not the end of ESC1.** If `certipy auth` fails
+`KDC_ERR_PADATA_TYPE_NOSUPP` (the KDC has no PKINIT/KDC cert), the issued cert
+still authenticates over **LDAP-over-TLS (Schannel)**: `certipy auth -pfx x.pfx
+-dc-ip $T -ldap-shell` binds *as the impersonated user*. From that shell act over
+LDAP directly — `add_user_to_group <you> "Domain Admins"`, set RBCD, shadow-creds —
+then DCSync. This is the same Schannel channel the ESC9/10 notes use, and it makes
+ESC1 pay even on a DC with no PKINIT.
 
 ### ESC2 — Any Purpose / no EKU
 Same enrol conditions, but EKU is Any-Purpose (`2.5.29.37.0`) or empty. The cert

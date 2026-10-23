@@ -181,7 +181,21 @@ subset.
 
 - **Secrets** — `kubectl get secrets -A -o yaml` (or the SA's namespace) once
   RBAC allows it: service-account tokens, registry pulls, DB passwords, TLS keys
-  all live here base64-encoded.
+  all live here base64-encoded. **Not only cluster creds** — operators routinely
+  park *OS-login* passwords and app master passwords in Secrets (a secret named
+  after a human user is the tell). Decode every one and spray it at node SSH and
+  every other service; a `get/list secrets` grant on one pod's SA is frequently
+  the whole lateral-to-host step, not just a path to a better token.
+
+**A pod with web RCE but no egress is still a cluster pivot.** When reverse
+shells and callbacks die (test once: a `curl`/`wget` to your tun0 that *hangs*
+on connect while DNS/other-pod requests return fast = egress firewalled, not
+"no exec"), the pod can still reach every ClusterIP/pod on the overlay. Drive
+internal services *through the webshell*: drop a tiny in-pod proxy
+(`file_get_contents($url, stream_context_create([...]))` in PHP, or `curl` if
+present) that forwards requests — with arbitrary method/headers/body — to
+`10.43.x.x` services, and run your whole next-hop exploit from inside the pod.
+The service env vars (`*_SERVICE_HOST/_PORT`) enumerate the targets for free.
 - **etcd** — a reachable etcd (`2379`) with the client certs (often on the node
   under `/etc/kubernetes/pki/etcd`) is the entire cluster state, secrets
   included: `etcdctl --endpoints=... get / --prefix --keys-only`.

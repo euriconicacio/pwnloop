@@ -20,6 +20,44 @@ Engagements are expected to change the methodology (see `memory/patterns.md`),
 so minor releases are the normal cadence. An entry that says only "ran a box"
 does not belong here — what belongs is what the run *changed*.
 
+## [1.22.0] — 2026-10-23
+
+Seven pending write-ups published — **Voleur** (Medium, Windows / AD),
+**GiveBack** (Medium, Linux / k8s), **Artificial** (Easy, Linux), **DevHub**
+(Medium, Linux), **Era** (Medium, Linux), **SmartHIRE** (Medium, Linux) and
+**Reset** (Easy, Linux — Vulnlab) — taking the index from 60 to 67 chains. The
+rooted-machines count is reconciled **61 → 69**: the 67 published chains plus two
+rooted-only machines held back from publication (`darkzeroreturns`, rooted but
+not retired, and one further box held back).
+
+Two through-lines run across the batch. The first is **a model upload is code
+execution, not data**: Artificial runs an uploaded Keras `.h5` whose Lambda layer
+deserializes to RCE, and SmartHIRE lands the same way through a model-loading
+endpoint reached with default creds — treat any ML "upload a model / run a model"
+surface as a deserialization sink, not a file store. The second is **the thing
+that runs as root is a backup or ops convenience**: Voleur falls to a
+world-readable `ntds.dit` + `SYSTEM`/`SECURITY` backup left on a share (an offline
+DCSync that needs no `SeBackupPrivilege` at all), DevHub to an "operations" MCP
+service running as root that hands out root's key, Artificial to a localhost
+Backrest backup daemon with a user-editable command field, and GiveBack to a
+`sudo` runc "debug" wrapper whose host-mount filter is a single string compare
+walked around with `/.`.
+
+The reference tree gains the write-back these engagements produced.
+`ad.md`: on a **Kerberos-only (NTLM-disabled)** domain a recovered hash or AES key
+cannot pass-the-hash — convert it to a TGT and overpass-the-hash instead, and
+prefer the AES256 key because a hardened domain often refuses RC4 (Voleur).
+`privesc-windows.md`: an AD backup (`ntds.dit` + `SYSTEM`) left readable on disk
+is a full DCSync regardless of any AD right, and **WSL is an in-box Linux pivot**
+whose `/mnt/c` (DrvFs) keeps Windows ACLs — root in the subsystem is a loot view
+for world-readable secrets, not Windows privilege (Voleur). `privesc-linux.md`
+gains the audit-log-as-credential-store class (Reset's `adm`-readable
+auditd/laurel) and the writable-directory-on-root's-import-path class (SmartHIRE's
+`sudo`-run MLflow control script). `web.md` and `llm-apps.md` gain the
+model-deserialization and PHP stream-wrapper sinks behind Artificial, SmartHIRE
+and Era; `kubernetes.md` and `containers.md` the no-egress pod pivot and the
+container-runtime-wrapper string-filter bypass behind GiveBack.
+
 ## [1.21.0] — 2026-09-19
 
 Six pending write-ups published — **DarkZero** (Hard, Windows / AD), **JOB**

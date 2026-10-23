@@ -580,6 +580,25 @@ sweep above.
   SUID `bash` (the bit is set, `id` still shows your uid). Drive it as `dev` with
   `urllib` straight to `127.0.0.1:9515`; no tunnel needed once you have a shell.
 
+**A Node.js process started with `--inspect`/`--inspect-brk` is code execution as
+that process's user — and on lab boxes that process is often root.** The V8
+inspector (default `127.0.0.1:9229`) is CDP with *no authentication by design*;
+anyone who can reach the port runs arbitrary JS in the target process. Find it in
+the loopback-port + UID-0 sweep, or straight from `ps aux | grep -- --inspect`
+(a systemd unit with `User=root` + an `ExecStart` that still carries `--inspect`
+is the classic "debug flag left in production" tell — read the unit for the
+confirmation). It is normally localhost-bound, so forward it out through whatever
+foothold shell you have (`ssh -L 9229:127.0.0.1:9229 user@host`). Then: `GET
+http://127.0.0.1:9229/json/list` for the `webSocketDebuggerUrl`, open that
+WebSocket, and send one `Runtime.evaluate` whose `expression` is
+`require('child_process').execSync('<cmd>').toString()` (fall back to
+`process.mainModule.require(...)` if `require` isn't in scope; set
+`returnByValue:true,awaitPromise:true`). Command output comes straight back in
+the CDP reply — synchronous, egress-independent. Prefer dropping a key into
+`/root/.ssh/authorized_keys` for persistence over a SUID copy (same `nosuid`
+caveat as above). The reasoning generalises to any interpreter debug port exposed
+as root (Python `debugpy`/`5678`, JDWP, Ruby, PHP Xdebug).
+
 ## Password reuse
 
 Every password you have found, tried against every user in `/etc/passwd`, plus
@@ -970,6 +989,42 @@ so it runs even when the backup itself fails (unreachable repo, size threshold).
 Confirm with `id > /tmp/x` in the hook. *(npbackup-cli 3.x: group
 `pre_exec_commands` ran as root before the backup.)*
 
+**The same primitive without sudo: a backup *daemon* running as root with a UI/API
+and a user-editable hook.** When the backup tool is a long-running service bound to
+localhost (restic web UIs, scheduler daemons), you do not need a sudo rule — you need
+its *credentials*, and those are routinely recoverable from a **world- or
+group-readable backup**. The shape recurs: a privileged group (e.g. `sysadm`) can read
+`/var/backups/<tool>.tar`, which contains the daemon's own config
+(`.config/<tool>/config.json`) with the admin **password hash**; crack it offline
+(often bcrypt, sometimes base64-wrapped) and log into the service, which runs as root.
+From there any "run a command" feature is root RCE — the same hook idea, driven over
+the API. The quirk to expect on an API-driven config: adding a repo/job may be a
+two-step (an `AddRepo`-style call that mints a required `guid` and persists, *then* a
+`SetConfig` that adds the plan referencing it), after which you trigger the operation
+(`Backup`) to fire a `pre`/`snapshot-start`/`on-error` hook. Characterise the service
+on localhost early: an odd high port bound to `127.0.0.1` owned by root is exactly this
+class. *(Backrest on `127.0.0.1:9898`: readable root backup → `backrest_root` bcrypt →
+command hook on snapshot-start ran as root.)*
+
+**A root localhost service whose own source you can read is a spec for its
+undocumented endpoints — read it before guessing.** When an odd `127.0.0.1` port
+is owned by root (map UID with `ss -ltnp` as root, or match the `ps` line) and
+its script is readable by the user you landed as (common: the service lives in a
+non-privileged home or an app dir owned by a lower user, e.g. `/opt/<svc>` owned
+by `analyst` but *run* as root), read the file end to end. An "operations"/"admin"
+API will often define tools or routes that are deliberately absent from its own
+`/tools/list` or help output but still callable — a hidden credential/file dump
+(`open('/root/.ssh/id_rsa').read()` returned in JSON), a "debug mode", an
+arbitrary-command field. Auth is frequently a single static `X-API-Key` whose
+value is sitting in a readable file in the lower user's home (`~/.<svc>_key`) or
+hard-coded in the very source you just read. The privesc is then one authenticated
+request — no crack, no hook, no restart — so **a user-readable API key gating a
+root-run service is itself the escalation, not merely a credential.** Distinguish
+the live primitive from decoys: the same source may hard-code fake-looking
+password/token dumps; the one that matters reads a *real file* at call time.
+*(class: internal "ops" MCP/REST daemon running as root, hidden `_admin_dump`
+tool leaking root's SSH key, API key from a world/group-readable home file.)*
+
 ## The sudo target's *configuration* is part of the trust boundary — read `Defaults`, not just the command
 
 A sudo rule can pin the absolute binary, the working directory and a single
@@ -1184,6 +1239,34 @@ recommend: `chmod 755` + root ownership on the cache directory, and run
 root-invoked Python with `-B` (no bytecode cache) or `-P` (do not prepend the
 script directory to `sys.path`).
 
+**A writable directory reached by `site.addsitedir()` is code execution via a
+`.pth` file — independent of what the script imports.** A common "plugin"
+pattern iterates a plugins dir and calls `site.addsitedir(subdir)` on each entry
+to make them importable. `addsitedir` does more than append to `sys.path`: it
+opens every `*.pth` file in the directory and, for any line beginning with
+`import ` (or `import\t`), **executes that line**. So a one-line `.pth` dropped
+into any such directory you can write runs arbitrary code the moment the
+privileged script starts — before `main()`, before argument parsing, and with no
+dependence on which module names the script imports or which sub-command is
+chosen:
+
+```bash
+# plugins/<writable>/z.pth   (line MUST start with "import")
+echo 'import os; os.system("cp /bin/bash /tmp/.rb && chmod 6755 /tmp/.rb")' \
+  > <writable-plugins-dir>/z.pth
+sudo <interpreted-tool> status      # any sub-command; addsitedir runs at startup
+/tmp/.rb -p -c id
+```
+
+Prefer this over planting a shadowing `module.py` when the writable dir's
+position on `sys.path` relative to the legitimate module dir is uncertain —
+`.pth` execution does not depend on search order. The check is the same `ls`
+(group- or world-writable plugin/site dir on a root-invoked interpreter); grep
+the script for `addsitedir`, `site.addsitedir`, `*.pth` handling, or a loop over
+a plugins directory. Mitigation to recommend: load only root-owned, fixed plugin
+paths — never put a non-root-writable directory on a privileged interpreter's
+site/`sys.path`.
+
 **A per-action identity gate does not protect the imports — they run first.** A
 sudo-able toolkit that checks `getpass.getuser()` inside each privileged branch
 still does `from utils import X` at the top, unconditionally, before any check.
@@ -1194,3 +1277,99 @@ regardless of which action is chosen or what the branch would have refused. When
 scanning a writable-module target, enumerate the sub-commands and their guards
 separately from the import list — the weakest sub-command sets the bar, not the
 one whose name matches the module you can write.
+
+## Root executes a signature-verified binary you can write — steal the key, reverse the scheme
+
+A recurring root-job shape: a cron/systemd/script runs a binary from a
+**group- or world-writable path** as root, but *verifies a signature first* to
+stop exactly this tampering. Two independent weaknesses turn it into root, and
+both are common on the same box:
+
+1. **The execution path is writable by a group you hold.** `find / -perm -2 -o -group <yourgroup>`;
+   a dir like `root:devs 0774` lets any `devs` member replace the binary even if
+   the file itself is root-owned (directory write permits unlink/recreate; and a
+   `-rwxrw---- root:devs` file is directly group-writable). A `/proc` scan
+   (pspy-style) names the root job and its schedule when you cannot read `/root`:
+   loop `for p in /proc/[0-9]*; do tr '\0' ' ' <$p/cmdline; done` and diff.
+2. **The signing private key is recoverable.** A leaked backup, a world-readable
+   key, a key in a repo. If you have the private key, the signature is yours to
+   forge.
+
+**Reverse the exact verification scheme empirically before forging — do not guess.**
+Replace the binary with an unsigned one once: the failure message usually leaks
+the mechanism (`objcopy: can't dump section '.text_sig'` →
+`[ERROR] Executable not signed`). Then capture the *legitimate* binary and test
+what the signature actually covers, because "sign the file" has several
+incompatible meanings:
+
+- whole file, file with the signature section **removed**, file with it **zeroed**,
+  or **one named section only** (a `.text_sig` section signing just `.text` is a
+  real pattern — the section name is a hint).
+- detached vs embedded; raw `openssl dgst` vs PKCS#7/CMS (`openssl smime/cms`);
+  certs bundled (`-certfile` not needed) vs not.
+
+Extract and verify against each candidate until one says OK:
+
+```
+objcopy --dump-section .text_sig=sig legit            # pull the stored signature
+objcopy -O binary --only-section=.text legit t.text   # candidate: .text only
+openssl smime -verify -binary -inform DER -in sig -content t.text \
+  -certfile cert.pem -CAfile cert.pem -noverify        # "Verification successful" => scheme found
+```
+
+Then forge with the *same* content definition and the stolen key, re-embed, and
+drop it in the writable path:
+
+```
+openssl smime -sign -binary -in mal.text -signer cert.pem -inkey key.pem \
+  -outform DER -nocerts -out mal.sig
+objcopy --add-section .text_sig=mal.sig --set-section-flags .text_sig=noload,readonly mal mal.signed
+cat mal.signed > <writable path>/monitor      # wait one cycle; root runs it
+```
+
+Payload should spend the root context in place (read the flag, drop a key, write
+sudoers) rather than rely on a SUID drop if `/tmp`/the path may be `nosuid`.
+Remediation to cite: keep the signing key off every reachable host; make the
+executed path root-only; sign the whole file bound to a build identity, not one
+section. **Restore the original signed binary during cleanup** — a forged monitor
+left in place re-roots the box for anyone every cycle.
+
+## The audit log is a credential store — read it if you can (auditd/laurel + `adm`)
+A box that ships **auditd with EXECVE capture** (and often LAUREL, `/usr/local/sbin/laurel`,
+as a deliberate tell) logs every command's *arguments*. Any secret ever passed on a
+command line is then sitting in cleartext — and the raw log is frequently readable by a
+low-privileged account:
+
+- `/var/log/audit/audit.log` is commonly `root:adm 0640`. If your foothold user is in
+  group **`adm`** (web/service accounts often are, for log access), you can read it.
+  `id` first; if `adm` is present, `grep -a type=EXECVE /var/log/audit/audit.log`.
+- auditd hex-encodes any argument containing special characters (spaces, pipes, quotes).
+  Decode every `aN=<hex>` (`echo <hex> | xxd -r -p`) — the interesting ones are always hex.
+- The classic sink is **`echo <password> | sudo -S <cmd>`** (a script/automation feeding
+  sudo's password on stdin) and **`tmux send-keys … 'cmd with secret' C-m`** (a root
+  process driving a user session). Both land the password verbatim in EXECVE argv.
+- Correlate `auid=<uid> uid=0 key="rootcmd"` lines to learn *which* account has sudo, then
+  the decoded argv gives you *its password*.
+
+This generalises any "root automates a login/maintenance task" design into a credential
+leak. It also **corrects an earlier note** that assumed "auditd/laurel logs are 0600 and
+unreadable" — check the actual mode and your group membership; the raw `audit.log` (not the
+`_laurel`-only enriched copy) is the one that tends to be `adm`-readable. Remediation to
+cite: never pass secrets in argv/stdin-to-`-S`; restrict the audit log to root; don't put
+service accounts in `adm`.
+
+## A root process that drives a user session via `tmux send-keys` leaks its keystrokes
+`systemd` unit → `expect`/script that keeps a user tmux alive (`sudo -u <u> tmux
+new-session/has-session/send-keys …`) types whatever it sends — including passwords — into
+the audit trail and into that argv. The tmux socket itself is usually `0700` and
+unreachable, but you don't need it: the keystrokes are already logged (see the audit-log
+entry above). Treat any `tmux send-keys` by root as a plaintext transcript.
+
+## `sudo <editor>` on a fixed file is still a full editor — GTFObins it
+A sudo rule like `(ALL) /usr/bin/nano /etc/<file>` is root code-exec, not a scoped edit.
+`nano` → `^T` (Execute command) or `^R^X` runs an arbitrary command as root; it can also
+`^R` read any root file into the buffer and `^O` write the buffer to any path. Same for
+`vi/vim` (`:!cmd`, `:set shell`), `less`/`man` (`!cmd`), `tar --to-command`, `ed`, etc.
+Drive `nano` non-interactively with a PTY (pexpect/`ssh -tt`): send `^T`, wait for the
+literal `Command to execute` prompt, send the command, then `\r`. Fix to cite: `sudoedit`
+or `rnano`, never a full editor via sudo.

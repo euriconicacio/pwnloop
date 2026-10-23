@@ -264,6 +264,21 @@ The move when `/root/.rhosts` trusts a name like `admin.corp`:
    (`\0localuser\0remoteuser\0cmd\0` to 514) — a ~20-line Python client works.
    *(Example: on build.vl this yielded `rsh -l root` = uid=0 on the host.)*
 
+**The DNS dependency is also a wall: if the target can't resolve the attacker, the
+remote trust is dead and must be driven locally.** `rshd` reverse-resolves the
+*client* IP; on a box whose egress DNS is firewalled (resolver = 1.1.1.1/8.8.8.8,
+unreachable) every attacker connection returns `getnameinfo: Temporary failure in
+name resolution` (`EAI_AGAIN`) and is refused — you cannot register a PTR the box
+will ever fetch. Check `nsswitch` `hosts:` (if it's `files dns` with dns blocked,
+only `/etc/hosts` names resolve) and the target's DNS reachability early. When the
+trust can't be reached from outside, it is only usable *after* you are already a
+trusted local user (so the r-services are the privesc's *last* hop, reached by some
+other foothold → user step), and note: a non-root local user cannot forge
+`ruser=sadm` locally either (no privileged source port, and the SUID client sends
+your real uid). `hosts.equiv` is never consulted for `root` — only `/root/.rhosts`
+is — so `+ <user>` grants login as any *non-root* local user. *(reset.vl: `+ sadm`
++ DNS-blocked = the r-services were flavour; the real door was elsewhere.)*
+
 ## SNMP (161/udp)
 
 ```bash

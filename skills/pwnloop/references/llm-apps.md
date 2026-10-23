@@ -87,6 +87,52 @@ name the server block.
 - **Ollama** (`11434`), **vLLM**, **LocalAI**, **text-generation-webui** — often
   bound with no auth. Beyond free inference, check for file-read/path params in
   model-load endpoints and for exposed admin routes.
+- **Model registries / experiment trackers are deserialization RCE, not just
+  storage.** MLflow (`5000`, `WWW-Authenticate: Basic realm="mlflow"`), and the
+  same shape in other registries, store models as **pickles**. Any host that
+  calls `mlflow.pyfunc.load_model("models:/<name>/<ver>")` (or `sklearn.load_model`,
+  `.predict()`) **unpickles the artifact and runs it on *that* host** — so write
+  access to the registry is code execution on whatever consumes the model, which
+  on these apps is the web front end, not the registry box. Two steps:
+  (1) *get in* — MLflow's built-in auth ships a **default admin** whose password
+  is rarely rotated; always try the product's shipped default against a
+  product-named `realm`/`WWW-Authenticate` before anything harder (a 401 whose
+  realm or docs-link names the component is a fingerprint, not a wall).
+  (2) *poison* — create a run, upload a crafted `MLmodel` (declare the
+  `python_function` loader as `mlflow.sklearn`, `model_path: model.pkl`) and a
+  `model.pkl` whose `__reduce__` returns `(os.system, (cmd,))` via the
+  `/api/2.0/mlflow-artifacts/artifacts/...` proxy, then
+  `POST /api/2.0/mlflow/model-versions/create` pointing at that artifact dir
+  under the model name the app will load. Trigger the app's predict path. A
+  returned error like `'int' object has no attribute 'predict'` *confirms exec*
+  (the pickle ran, the "model" became `os.system`'s int return). If the model
+  name is derived from an attacker-controlled field (company/tenant), you control
+  which registered model to overwrite. Related MLflow CVEs (path traversal /
+  artifact read, e.g. CVE-2023-1177) are worth checking by pinned version, but
+  the pickle-on-load primitive needs no CVE.
+- **Keras `.h5`/SavedModel uploads are deserialization RCE, not just data.** Any app
+  that accepts a model file and calls `tf.keras.models.load_model()` on it runs
+  attacker code: a **`Lambda` layer** stores its function as marshalled Python
+  bytecode that `load_model()` reconstructs and executes (it fires on load *and* on
+  predict, so you need no prediction path). This is the same "code on load" primitive
+  as the pickle case, with no CVE. Two details decide whether it works:
+  (1) **Pin the exact TF *and* Python version** — the app usually tells you
+  (`/static/requirements.txt`, a linked `Dockerfile`, a `/version` route). Marshalled
+  code objects are **Python-version specific**: build the model under the target's
+  Python minor (e.g. a `uv`/pyenv py3.8 venv) or `load_model` raises `bad marshal
+  data` and silently does nothing. CPU arch does not matter (the `.h5` format is
+  portable), so on an ARM attack host use the ARM TF wheel of the matching version
+  (`tensorflow-aarch64==<same ver>`; its `h5py` dep may need a pinned wheel to avoid a
+  source build).
+  (2) **Make the payload self-contained.** Bake the command as a *string literal
+  inside the Lambda's function* so marshal captures it in `co_consts`. A function that
+  references a module global (an env var read at build time, a top-level constant)
+  loads fine locally but raises `NameError` on reload in the server's fresh process —
+  the layer "fires" and does nothing, a very confusing dead end. Confirm execution
+  cheaply with a `sleep N` payload and time the request. If **egress is blocked**
+  (characterise it — no target-originated SYNs on tcpdump), deliver in-band: have the
+  command write output into a web-served directory you can then GET, and plant an SSH
+  key for a stable shell rather than chasing a callback.
 - **LangChain/LlamaIndex glue** — a `PromptTemplate` or an `LLMMathChain`/
   `PALChain` built from user input is server-side template injection or Python
   `eval` RCE. Grep recovered source for `from_template`, `PythonREPL`,
