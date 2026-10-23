@@ -1,6 +1,6 @@
-# Reset — Vulnlab, Easy, Linux
+# Reset — Hack The Box, Easy, Linux
 
-*Flags shown are from my own run — strip them before publishing anywhere.*
+*Machine status: retired. Flags shown are from my own run — strip them before publishing anywhere.*
 
 ## Recon
 

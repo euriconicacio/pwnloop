@@ -25,7 +25,7 @@ does not belong here — what belongs is what the run *changed*.
 Seven pending write-ups published — **Voleur** (Medium, Windows / AD),
 **GiveBack** (Medium, Linux / k8s), **Artificial** (Easy, Linux), **DevHub**
 (Medium, Linux), **Era** (Medium, Linux), **SmartHIRE** (Medium, Linux) and
-**Reset** (Easy, Linux — Vulnlab) — taking the index from 60 to 67 chains. The
+**Reset** (Easy, Linux) — taking the index from 60 to 67 chains. The
 rooted-machines count is reconciled **61 → 69**: the 67 published chains plus two
 rooted-only machines held back from publication (`darkzeroreturns`, rooted but
 not retired, and one further box held back).
