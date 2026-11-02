@@ -171,6 +171,14 @@ enforcement on the DC does not save a weak *explicit* mapping.
 ### ESC15 — EKUwu / arbitrary application policy (CVE-2024-49019)
 V1 templates with enrollee-supplied subject (e.g. `WebServer`): inject an
 application policy the template never intended.
+**`certipy find -vulnerable` does NOT flag ESC15** — read the raw template JSON
+(`certipy find -json`): any **Schema Version 1** template with *Enrollee Supplies
+Subject* and no manager approval is the EKUwu condition, regardless of its declared
+EKU. PKINIT with the issued cert fails ("not valid for client authentication")
+because the template's baseline EKU is Server Authentication — that failure is
+expected, **switch to `-ldap-shell` (Schannel)**, which trusts the injected
+application policy. From the Administrator LDAP shell, `add_user_to_group <you>
+"Domain Admins"` then re-auth (token is fixed at logon).
 ```bash
 # Direct: inject Client Auth + forged UPN, auth over Schannel
 pwnloop x "certipy req -u <u>@<dom> -p <p> -dc-ip $T -target ca.<dom> -ca <CA> \

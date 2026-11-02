@@ -19,6 +19,18 @@ env | grep -iE 'KUBERNETES|SECRET|TOKEN'
 Decode `CapEff` with `capsh --decode=<hex>`. `0000003fffffffff` (or any value
 with `cap_sys_admin`) = wildly over-privileged, likely `--privileged`.
 
+**Before any escape primitive, read the container's environment and config for
+host credentials — the cheapest pivot by far.** A secret handed to a container as
+an environment variable sits in `/proc/1/environ` (PID 1 is the entrypoint) and
+`/proc/self/environ`, readable by root-in-container with no capability at all.
+The highest-value ones name an admin account whose password is **reused on the
+host**: `cat /proc/1/environ | tr '\0' '\n' | grep -iE 'PASS|USER|SECRET|KEY|TOKEN|ADMIN'`.
+A service's own admin env (e.g. `GF_SECURITY_ADMIN_USER` / `GF_SECURITY_ADMIN_PASSWORD`)
+is routinely the SSH password of a host user of the same name. Spray every value
+at SSH and every service before engineering a socket/cap/mount escape — you may
+not need the escape at all, and the container is often a dead-end leaf whose only
+purpose was to hold that credential.
+
 ## Mounted docker/podman socket — the easiest win
 
 If `/var/run/docker.sock` is reachable, you *are* the Docker daemon: launch a new

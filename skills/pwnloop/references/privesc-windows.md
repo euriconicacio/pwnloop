@@ -173,6 +173,43 @@ a co-located `hostfxr.dll` over the shared runtime, so your `DllMain` runs as th
 exe's account when the service starts. Works whenever you have write into the
 apphost's directory; self-delete the DLL after firing.
 
+## A writable COM-registration key is cross-user code execution — grep CLSID ACLs, not just file ACLs
+
+A COM/shell-extension class points at its handler DLL through
+`HKLM\SOFTWARE\Classes\CLSID\{...}\InprocServer32` (the `(Default)` value is the
+DLL path). Whoever can **write that value** controls what DLL loads into *any*
+process that activates the class — which is usually a *different, more privileged*
+user than you, so this is a privilege-crossing primitive, not a same-user trick.
+Shell extensions (Explorer context menus, archivers, preview handlers) are the
+classic carrier because a user triggers them just by right-clicking or opening a
+folder.
+
+Look for it whenever an enumeration hint ("new context-menu feature", "shell
+extension", a named archiver/preview tool) or a loose ACL points at a CLSID:
+
+```powershell
+# find the class, then read who can write its handler
+reg query "HKCR\CLSID" /s /f "<product>"
+(Get-Acl "HKLM:\SOFTWARE\Classes\CLSID\{GUID}\InprocServer32").Access |
+  ? { $_.RegistryRights -match 'FullControl|SetValue|WriteKey' }
+```
+
+A non-admin group with `FullControl`/`SetValue` there = repoint `(Default)` to
+your DLL and wait for the privileged user to invoke the extension. Two delivery
+notes that recur:
+
+- The handler runs in the *invoking* user's context, so a `windows/x64/exec` DLL
+  that does the one action you need (set RBCD, add a group, drop a key) in one
+  shot is more reliable than catching an interactive reverse shell — especially
+  when your listener can't take stdin.
+- If the account that holds the CLSID write has **no remote-logon right** (WinRM
+  SMB both refuse — `STATUS_LOGON_TYPE_NOT_GRANTED`), do the registry write with
+  a process launched *locally as that account* via **RunasCs** from a session you
+  already hold. RunasCs logon-type matters: a restricted account may be denied
+  type 4/8 and only granted type **2** (the error names the allowed type). Put
+  the actual `reg add` in a `.bat` and run `cmd /c <bat>` — nested quoting through
+  the WinRM→PowerShell→RunasCs layers otherwise mangles the CLSID string.
+
 ## A local (or localhost-only) service that runs input is the privesc — read its interface
 
 A custom service listening on `127.0.0.1`/`[::]` that a low-priv user can reach

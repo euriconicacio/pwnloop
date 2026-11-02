@@ -20,6 +20,22 @@ Engagements are expected to change the methodology (see `memory/patterns.md`),
 so minor releases are the normal cadence. An entry that says only "ran a box"
 does not belong here — what belongs is what the run *changed*.
 
+## [1.23.0] — 2026-11-01
+
+Seventeen pending write-ups published — **Backfire**, **Checkpoint**,
+**Down**, **Environment**, **Eureka**, **Fluffy**, **MakeSense**, **NanoCorp**,
+**Planning**, **Puppy**, **Reactor**, **Retro**, **RustyKey**, **Signed**,
+**TombWatcher**, **VulnEscape** and **WhiteRabbit** — taking the index from 67
+to 84 chains. The rooted-machines count reconciles **69 → 85**: the 84 published
+chains plus one rooted-only machine still held back from publication
+(**DarkZeroReturns**, rooted but not yet retired).
+
+Methodology write-backs across nine references — AD, AD CS, C2 ops, containers,
+cracking, Linux and Windows privesc, services and web (478 lines added): a
+published status page leaks the internal topology; signed LDAP still answers
+when a DC's LDAPS certificate does not; a clock-seeded password generator is
+only as strong as the uncertainty in the second it ran.
+
 ## [1.22.0] — 2026-10-23
 
 Seven pending write-ups published — **Voleur** (Medium, Windows / AD),

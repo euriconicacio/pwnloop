@@ -81,3 +81,51 @@ domain controller are how a lab environment gets destabilised, and the access yo
 lose is your own. Prefer the lighter equivalent when there is one, take the dump
 once, and pull it out of the environment immediately — a copy on your own disk
 keeps its value after every session in the environment has died.
+
+## A C2 framework you find *on the target* is an attack surface, not just loot
+
+Modern lab boxes increasingly run a C2 teamserver (Havoc, HardHat, Sliver,
+Mythic, Covenant) as the intended service. Attack it as a product: fingerprint
+the exact version, pull its **open-source default config**, and read its source
+for the auth model before touching a wordlist.
+
+- **Config/profile files are credentials *and* a port map.** A teamserver profile
+  (Havoc `*.yaotl`, a Sliver/Mythic config) names operator logins in cleartext,
+  the internal management port, and the listener vhosts. "Can download the
+  profile" = owns the teamserver. A served directory listing (nginx autoindex on
+  an odd port) is the classic leak.
+
+- **A hard-coded signing key in the product's public `appsettings.json`/config =
+  forge any token.** .NET C2s (HardHat) validate JWTs against a key shipped in
+  the repo (`Jwt:Key`) with issuer/audience also fixed and an IP whitelist of
+  `*`. Read the *server source* for the exact claim shape — role claim type
+  (`ClaimsIdentity.DefaultRoleClaimType`), issuer==audience, algorithm (HS256) —
+  then mint an `Administrator` token offline with any JWT library. Don't guess
+  the claims; the `Authentication`/`Startup` `TokenValidationParameters` is the
+  spec.
+
+- **The real control plane is often a SignalR/gRPC hub, not the REST port.** For
+  ASP.NET Core SignalR: the hub lives on the API port (the Swagger one), *not*
+  the SignalR-looking secondary port. `POST /<Hub>/negotiate?negotiateVersion=1`
+  for a `connectionToken`, open a WebSocket to `wss://host/<Hub>?id=<token>`, send
+  the JSON-protocol handshake `{"protocol":"json","version":1}\x1e`, then invoke
+  methods with `{"type":1,"invocationId":"1","target":"<Method>","arguments":[…]}`.
+  A hub class with **no `[Authorize]`** exposes every method unauthenticated.
+
+- **Hub/API methods are file primitives.** C2 teamservers expose
+  download/host/upload helpers by design. A `Download(path)` that does
+  `File.ReadAllBytes(path)` is arbitrary read **as the teamserver user**; a
+  `HostFile(bytes, filename)` that writes `<app>/wwwroot/<filename>` with no path
+  canonicalisation is arbitrary **write** via `../` traversal. Write the
+  teamserver user's `~/.ssh/authorized_keys` (the service runs as a human-named
+  account often enough) and SSH in.
+
+- **The agent/implant listener is an unauthenticated surface.** A spoofed agent
+  registration/check-in can be a real CVE (Havoc CVE-2024-41570: SSRF → open a
+  TCP socket *from* the teamserver). Point that socket at the teamserver's own
+  local-only management port to reach an "internal only" admin channel, then
+  drive an authenticated bug (Havoc's build-config command injection) through it.
+
+Service-side build/compile steps run with a **build cache keyed on config**, so a
+re-fired injection with an identical payload silently no-ops — vary one byte of
+the injected command to force a rebuild.

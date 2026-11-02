@@ -56,6 +56,17 @@ pwnloop x "gpg2john key.asc     > g.hash"
 pwnloop x "pdf2john file.pdf    > p.hash"
 ```
 
+**When `*2john` refuses the newer format, crack against the library directly.**
+`keepass2john` rejects KDBX4 (`File version '40000' is currently not supported!`)
+because of its Argon2 KDF — and other extractors lag their formats too. The
+fallback that always works is to loop a wordlist through the product's own parser
+and catch the success: for KeePass, `pykeepass.PyKeePass(db, password=pw)` throws
+on a wrong key and returns on a right one. Argon2 is deliberately slow, so lead
+with context-derived candidates (names, the box's other passwords) and only the
+top of rockyou, not the full list. The same pattern — "no hash mode exists, so
+brute the opener" — applies to any KDF-hardened container a `*2john` tool can't
+yet express.
+
 ## Application hash stores: rebuild the format by hand, then prove it
 
 Most application databases (a web app's `user` table, an exfiltrated SQLite/MySQL
@@ -238,3 +249,15 @@ resolves more lab machines than cracking itself does. But test scope before
 concluding reuse: a service's own admin password (e.g. a mail server's) is often
 *not* the Windows/domain password — confirm against each service rather than
 assuming the crack unlocks everything.
+
+## Offline-crack an application vault via the tool's own decrypt oracle
+
+A recovered password-manager / app vault is usually crackable without a hashcat
+mode: use the tool's own library to try keys. Python `cryptocode` blobs are four
+base64 fields joined by `*` (`ct*tag*nonce*salt`); `cryptocode.decrypt(blob, pw)`
+returns the plaintext on the right key and `False`/`""` on a wrong one — a clean
+boolean oracle, so a ~15-line loop over `rockyou` finds a weak master password in
+seconds (its KDF is cheap). The same pattern applies to any vault whose decrypt
+routine fails closed: call the real `decrypt()` rather than reimplementing the
+format. Add a self-chosen control blob and crack it first to prove your harness
+before trusting a "not found".

