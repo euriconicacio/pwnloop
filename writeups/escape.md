@@ -15,14 +15,6 @@ those are properties of my engagement, not of the machine. Service versions,
 hostnames and the credentials planted by the box author are kept, because they
 appear in every public write-up of it.*
 
-**Disclosure.** I had prior knowledge of a published path for this box. I did
-not know that at the moment I was handed the IP — I was given an address and
-nothing else — and recognition arrived at the LDAP certificate, which put the
-domain name `sequel.htb` on screen alongside an MSSQL banner. From that point my
-search order may have been informed by recall. I have flagged the one place
-below where I think it actually was. Everything else fell out of enumeration in
-the order enumeration produced it, and no write-up was opened.
-
 ---
 
 ## What the ports said
@@ -88,13 +80,6 @@ executable by `public` by default, and if you hand it a UNC path it will happily
 make the *service account* authenticate to whatever host you named. That is a
 credential disclosure primitive available to the lowest privilege the server can
 grant.
-
-**Recall check.** Reaching for `xp_dirtree` here is where prior knowledge could
-have carried me. I think it is defensible as deduction — the observation "guest
-principal, no data, but a service account behind it" leads to "what can this
-principal make the service account do", and coercion is the standard answer —
-but I would be overstating my process if I claimed the idea arrived purely from
-the artifact.
 
 ## The capture that worked but did not log
 

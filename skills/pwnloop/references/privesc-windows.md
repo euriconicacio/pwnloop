@@ -511,3 +511,39 @@ it read `C:\Users\Administrator\Desktop\root.txt` into a folder your unelevated 
 read it back. Other auto-elevate hijacks (SilentCleanup scheduled task, computerdefaults.exe,
 sdclt) are drop-in alternatives if fodhelper is blocked; the deny-only-token reasoning is the
 transferable part. Clean up: `reg delete HKCU\Software\Classes\ms-settings /f`.
+
+## Deleted files as a credential source (Recycle Bin)
+
+When a Windows foothold has no live privesc edge, enumerate what was *deleted*.
+`C:\$RECYCLE.BIN` holds a per-user-SID subfolder; each deleted item is a `$R*`
+(contents) + `$I*` (original path/metadata) pair. Recurse into the SID folder —
+a `Get-ChildItem C:\ -Force` that merely lists `$RECYCLE.BIN` without descending
+misses it. Pull the `$R*` file and mine it like any recovered artifact (archives,
+installers and config-management configs routinely carry reusable credentials;
+deployment tools such as WAPT store an admin password in their `*.ini`, often
+base64/reversible rather than encrypted). Read the value for what it hints at and
+spray it at every account — an app/service password is frequently a real AD one.
+
+## GPO abuse: Group Policy Creator Owners + WriteGPLink on an OU
+
+Membership in **Group Policy Creator Owners** (create a GPO) plus **WriteGPLink**
+on an OU that contains a target computer (e.g. the Domain Controllers OU) is
+code-exec-as-SYSTEM on that computer: create a GPO, add a Group Policy
+Preferences *immediate scheduled task* running as `NT AUTHORITY\System`, link it
+to the OU, and it runs at the target's next GP refresh. Reason about three failure
+modes that read as "nothing happened":
+
+- **Incomplete task XML is silently ignored.** The GPP `ImmediateTaskV2` needs a
+  full `<Settings>` block and a `<Triggers><TimeTrigger>` — hand-trimmed XML gets
+  skipped by the client-side extension. Emit it with a known-good generator
+  (pyGPOAbuse) rather than by hand.
+- **The AD side must be consistent with SYSVOL.** Set `gPCMachineExtensionNames`
+  to the Scheduled-Tasks CSE GUIDs and bump `versionNumber` (and gpt.ini Version);
+  if your tool's LDAP step fails, do these writes with bloodyAD.
+- **A lab reset that reverts AD faster than the GP refresh (DCs: every 5 min).**
+  Keep a valid, linked GPO continuously present by running the create+link+weaponize
+  loop *on the target* (recreate every few seconds), and keep the OU `gPLink`
+  limited to the default policy + your GPO — dangling links to already-deleted GPOs
+  break GP processing. Confirm via a file the SYSTEM task writes, not the current
+  session token (new group membership needs a fresh logon/TGT). Clean up: reset the
+  OU `gPLink`, `Remove-GPO` every GPO you made, undo the admin add.

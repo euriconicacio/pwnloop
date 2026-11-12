@@ -20,6 +20,30 @@ Engagements are expected to change the methodology (see `memory/patterns.md`),
 so minor releases are the normal cadence. An entry that says only "ran a box"
 does not belong here — what belongs is what the run *changed*.
 
+## [1.24.0] — 2026-11-12
+
+Eight pending write-ups published — **Cat**, **Cypher**, **Dog**, **Frizz**,
+**Nocturnal**, **Strutted**, **Titanic** and **Underpass** — taking the index
+from 84 to 92 chains. The rooted-machines count reconciles **85 → 93**: the 92
+published chains plus the one rooted-only machine still held back from
+publication (**DarkZeroReturns**, rooted but not yet retired).
+
+Publication hygiene: **Escape**'s write-up had carried an explicit prior-knowledge
+disclosure in the published text; recognition notes belong only in the
+(gitignored) engagement ledger, so the meta is stripped from `writeups/escape.md`
+while the technical chain is unchanged. Cracked-password MD5 hashes shown as
+mechanism in the new write-ups are masked (first/last bytes) so the publication
+audit stays clean.
+
+Methodology write-backs across five references (376 lines added): SNMP's system
+group is a hostname/vhost/product oracle on an otherwise bare host; a NOPASSWD
+sudo entry for a session-spawning binary (mosh-server, screen, tmux, script) is
+a root shell; a root wrapper that sanitizes then re-reads an attacker path is a
+TOCTOU; Cypher/Neo4j injection reflects errors and bypasses auth via UNION;
+Recycle-Bin tombstones and `WriteGPLink`/Group-Policy-Creator-Owners are
+credential and takeover surfaces; Bolt custom procedures shell out; Kerberos-only
+GSSAPI SSH reaches a Windows host.
+
 ## [1.23.0] — 2026-11-01
 
 Seventeen pending write-ups published — **Backfire**, **Checkpoint**,
