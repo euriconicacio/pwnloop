@@ -46,6 +46,23 @@ git stash list; git branch -a
 git fsck --lost-found 2>/dev/null | grep commit | cut -d' ' -f3 | xargs -I{} git show {} | head -60
 ```
 
+When the dumped repo is a fork/checkout of a public project (the `.git/config`
+`origin` names an upstream — a CMS, a framework), **the author's own changes are
+usually the loose objects**: `git-dumper` fetches packed history as a packfile but
+grabs any object *not* in the pack individually, so the loose objects are exactly
+what was committed on top of the vendor baseline. List them first — they point
+straight at the planted secret or the modified file, skipping thousands of
+upstream blobs:
+
+```bash
+find .git/objects -type f -not -path '*/pack/*' \
+  | sed 's#.*/objects/##; s#/##' \
+  | while read o; do echo "== $o ($(git cat-file -t $o)) =="; git cat-file -p $o; done
+```
+
+(A real example of this shape: a vendor CMS checkout whose only loose blobs were a
+deploy `Dockerfile` and a test file edited to carry the live admin password.)
+
 Then the whole tree, not just the config files:
 
 ```bash

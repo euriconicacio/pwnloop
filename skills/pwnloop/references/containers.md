@@ -134,6 +134,34 @@ host `/` (via `/.`) to `/host`, then operate on `/host`: drop a `chmod 6777`
 SUID shell and read the flag. Clean up the SUID file (unlink it from inside a
 `-p` shell — a process can remove itself) and `runc delete` any leftover state.
 
+## A service that extracts your archive "server-side by the container engine"
+
+An app endpoint that accepts an uploaded archive and says it is *decompressed and
+extracted by the container engine* (typically `PUT /containers/{id}/archive` on
+the Docker API) is a container→host-root primitive when the engine resolves its
+decompression helper (`xz`, `unpigz`, `bzip2`, …) **from the container's overlay
+filesystem** instead of the host. The daemon runs that helper as itself — host
+root, host PID namespace — so whoever can write a file into the container and
+upload a matching compressed archive gets code execution as host root (e.g.
+Docker ≤ 29.5.0 / CVE-2026-41567). The method, independent of the exact CVE:
+
+1. **Confirm the engine and version** — the app's status/health page often prints
+   it (`Engine: Docker 29.5.0`). Pin it and check the advisory.
+2. **Plant the helper.** Upload an archive that writes an executable at the path
+   the engine will resolve (`usr/bin/xz`) into the container (extract target =
+   container root). A `.tar` (uncompressed) plant does not itself invoke the
+   helper. Build the trojan for the **host** architecture, static.
+3. **Trigger** by uploading a correspondingly compressed archive (a `.tar.xz`
+   forces the planted `xz` to run). Expect a 500/hang while your payload blocks.
+4. **Escape inside the trojan.** It runs in the container's *mount* namespace but
+   the *host* PID namespace, so reach the host fs with
+   `mount("proc","/proc",...)` + `chroot("/proc/1/root")`, then run your payload
+   (egress-blocked target → have it return the result in the response path or
+   drop a readable artifact rather than a callback).
+5. **Clean up** — neutralise the planted helper afterwards (overwrite it with a
+   benign no-op via the same endpoint); it is a standing root-RCE backdoor until
+   you do. Leave the app's deployment/audit log rows intact.
+
 ## After escaping
 
 Verify you're on the host, not another container (`hostname`, `mount`, the

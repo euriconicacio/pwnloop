@@ -501,6 +501,7 @@ Read these on demand, not upfront:
 - `references/web.md` — fuzzing, LFI/upload/SQLi/SSTI/XXE/deserialization/SSRF, prototype pollution, smuggling, auth bypass
 - `references/api.md` — REST/GraphQL discovery, JWT attacks, IDOR, race conditions, SSRF
 - `references/llm-apps.md` — Langflow/Flowise/MCP platforms: unauth flow-execution RCE, alg:none, tool registries, RAG poisoning
+- `references/blockchain.md` — EVM dev-node apps (8545): public on-chain storage, onlyOwner guards writes not reads, eth_call spoofed-`from`, token-gated JSON-RPC proxies, credential reuse
 - `references/source-review.md` — reading recovered source: secrets, sinks, authorization gaps
 - `references/cracking.md` — hash identification, john/hashcat formats, spraying strategy
 - `references/services.md` — per-port playbooks (SMB, FTP, SSH, DNS, SNMP, LDAP, SQL, Redis, RPC, WinRM, SMTP, rsync, RMI/JDWP, app servers, NoSQL, IPMI/VNC)

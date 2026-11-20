@@ -20,6 +20,54 @@ Engagements are expected to change the methodology (see `memory/patterns.md`),
 so minor releases are the normal cadence. An entry that says only "ran a box"
 does not belong here — what belongs is what the run *changed*.
 
+## [1.25.0] — 2026-11-20
+
+The milestone release: **100 distinct rooted machines** in the flags ledger. Two
+pending write-ups are published this cycle — **DoubleTake** and **BlockBlock** —
+taking the index from **92 to 94 chains**, and the rooted-machines metric is
+reconciled to the ledger at **93 → 100**. The gap between 100 rooted and 94
+published is the held-back set: machines rooted but not published because they are
+not yet retired, were operator-assisted rather than a clean loop discovery, or are
+still awaiting a write-up (**alert**, **code**, **heal**, **linkvortex**,
+**nimbus**, **unrested**, and one still addressed-only). As always, steer and
+recognition notes live only in the gitignored engagement ledgers and never reach a
+published chain; this release was audited (`pwnloop audit`) before tagging.
+
+**BlockBlock** (Hard, Linux) is a clean loop discovery and produced a new reference
+class: an EVM dev-node app where the vulnerabilities are not in the crypto but in
+treating a public ledger as private storage. Chain: message *content* is escaped but
+the *username* (`${msg.sender}`) is rendered raw, so a self-registered XSS-username
+steals the moderator bot's admin JWT; `/admin` mints a JSON-RPC proxy token;
+`eth_call` with a spoofed `from` defeats the contracts' `onlyOwner` getters and reads
+the admin password (storage is public); the password is reused for SSH (`keira`);
+then `sudo -u paul forge script --ffi` (Foundry FFI RCE) and `sudo pacman -U`
+(package `post_install` scriptlet) walk to root.
+
+Methodology write-backs:
+
+- **NEW `references/blockchain.md`** — EVM dev-node apps on 8545: on-chain storage is
+  world-readable; access modifiers guard *transactions*, not *reads*; `eth_call` with
+  a spoofed `from` answers owner-gated getters; deploy-time events leak seeded
+  accounts; token-gated JSON-RPC proxies hand the token to the admin UI. The chain is
+  almost always *web-auth → proxy token → on-chain read → credential reuse*.
+- **`references/privesc-linux.md`** — the code-eval-CLI section gains two families
+  that are code execution in disguise: build/test toolchains with a scripting/FFI
+  hook (Foundry `forge script --ffi` via `vm.ffi`, make/cmake, ansible/salt) and OS
+  package managers that install local files via scriptlets (`pacman -U`
+  `post_install`, `dpkg -i` `postinst`, `rpm -i` `%post`), plus the `nosuid`
+  `/tmp`,`/dev/shm` SUID-payload gotcha.
+- **`references/web.md`** — check *every* output sink for an injected field (one
+  escaped, another raw); a payload reflected back through a URL query parameter must
+  be space-free (`eval(atob())`); use an unconditional canary to separate "JS
+  executed" from "beacon egressed" before blaming egress.
+- **`references/services.md`, `containers.md`, `cloud.md`, `cracking.md`, `recon.md`,
+  `source-review.md`** — write-backs from recent runs: a `pN`-less OpenSSH banner is a
+  custom build (pin it and hunt the CVE), the musl `crypt()` auth-bypass class
+  (SSHole), a container engine that resolves a tool from the attacker-controlled
+  overlay and runs it as host root (Docker `xz`), emulated-cloud (LocalStack)
+  enumeration, a size/word filter that matches everything is a redirect oracle, and
+  optimiser-aware cracking.
+
 ## [1.24.0] — 2026-11-12
 
 Eight pending write-ups published — **Cat**, **Cypher**, **Dog**, **Frizz**,

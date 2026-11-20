@@ -261,3 +261,25 @@ seconds (its KDF is cheap). The same pattern applies to any vault whose decrypt
 routine fails closed: call the real `decrypt()` rather than reimplementing the
 format. Add a self-chosen control blob and crack it first to prove your harness
 before trusting a "not found".
+
+## When the control fails: switch tools, and watch the optimiser
+
+Proving the harness with a self-made control (above) also tells you *which tool*
+can do the format at all — coverage differs between builds and you cannot assume
+a format works just because the tool loaded the hash.
+
+- **A build may load a hash and still never match it.** Seen with Apache `$apr1$`:
+  a `john` md5crypt build accepted the hash and ran to completion but failed even
+  a known-password control generated with `openssl passwd -apr1 -salt <salt>
+  <word>`. The same control cracked in `hashcat -m 1600` instantly. So when a
+  control fails in one tool, try the *other* (john ↔ hashcat) before touching the
+  wordlist — the password may be fine and the tool simply can't compute the KDF.
+- **An optimised kernel can silently exclude candidates.** `hashcat -O` caps
+  password length per mode (e.g. 15 for `-m 1600` md5apr1); longer words are
+  skipped and the run still prints `Status: Exhausted`, i.e. a false negative.
+  Only pass `-O` when you know the password is short; otherwise drop it and
+  re-run. The same control hash — made from a password *longer* than the cap —
+  catches this before it costs you a wordlist.
+
+The rule underneath both: a negative result is only trustworthy once a control of
+the *same format and a representative length* cracks in the *same invocation*.

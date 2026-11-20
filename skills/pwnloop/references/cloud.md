@@ -130,3 +130,30 @@ created — in reverse order — and verify with a fresh `get-caller-identity` /
 `az role assignment list` / `gcloud projects get-iam-policy`. Note anything you
 could not remove (a resource that would break the lab) in the ledger with the
 exact deletion command.
+
+## Emulated cloud (LocalStack and forks)
+
+Some "AWS" targets are a local emulator (LocalStack, or a rebrand) rather than
+real AWS. Treat the emulator itself as the attack surface.
+
+- **Fingerprint it.** STS-style error XML on every path, or a
+  `/_<brand>/health` + `/_<brand>/info` endpoint listing running services and
+  version.
+- **IAM is usually enforced by a reverse proxy in front of the emulator, not by
+  the emulator.** The proxy vhost returns `AccessDenied`; the emulator's own edge
+  port (commonly `:4566`) typically enforces no IAM at all. From any foothold on
+  the emulator's network, re-issue the same calls directly at
+  `http://<emulator-host>:4566` — `sts get-caller-identity` frequently returns an
+  account-root ARN. The proxy is the only boundary, so going around it is the
+  escalation.
+- **Account selection.** The emulator derives the account from the access key you
+  present: a real key keeps its account; the literal 12-digit account number used
+  as the key selects that account; a placeholder key lands in the default
+  `000000000000`. If data stores look empty, confirm you are in the right account.
+- **Compute services spawn real containers via the host Docker socket the
+  emulator holds.** Community builds often ignore ECS host `volumes`/`privileged`
+  and may disable Lambda hot-reload, so enumerate which container-spawning service
+  actually honours privilege/mounts before committing. A privileged build /
+  Docker-in-Docker feature is the usual host-escape lever (see privesc-linux for
+  the privileged-container kernel-hook escapes), and images are limited to what is
+  already on the box when there is no registry egress.

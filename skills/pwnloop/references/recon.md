@@ -69,6 +69,17 @@ pwnloop x "curl -s -o /dev/null -w '%{size_download}\n' -H 'Host: nope.machine.h
 pwnloop x "ffuf -u http://$T/ -H 'Host: FUZZ.machine.htb' -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-20000.txt -fs <size> -s"
 ```
 
+**When a size/word filter matches *everything*, the redirect is echoing the
+Host.** A 301/302 whose body is `... href="http://FUZZ.machine.htb/" ...`
+changes length with the candidate name, so `-fs`/`-fw` against one baseline
+never matches and every word in the list looks "found". Don't trust that list:
+switch the filter to the HTTP *status* instead (`-fc 301,302` to hide the
+default redirect, or `-mc 200,401,403`), or probe a handful of likely names
+directly and compare status codes — the real internal vhost usually answers
+with a *different code* (a 401/200), not merely a different size. On this box
+the only true vhost (`statistics.`) was a 401 hiding in a sea of 301s that the
+size filter had flagged as hits.
+
 Then fuzz for more subdomains once you know the base domain — see
 `references/web.md`.
 

@@ -149,6 +149,28 @@ This is a custody failure, not a protocol one: an SSH CA is root-equivalent for
 every host that trusts it, so the finding to lead a report with is that the
 signing key was readable by the accounts authenticating *with* it.
 
+**A `pN`-less OpenSSH banner is a custom build — pin it and hunt the CVE before
+the web app.** Portable OpenSSH on a distro reports `OpenSSH_10.6p1`; a bare
+`OpenSSH_10.6` (no `pN`) means someone compiled it themselves, and on a
+locked-down box the service built *differently* from the distro default is the
+intended door, not the application behind Basic auth. Treat the anomaly as the
+lead: pin the exact version, search the advisory, and reproduce the mechanism.
+
+**musl `crypt()` auth-bypass class (e.g. SSHole / CVE-2026-123158).** When sshd
+is linked against **musl without PAM** (Alpine, or a custom musl build — the
+`pN`-less banner above is a tell), accounts whose `/etc/shadow` field is exactly
+`*` (key-only / locked: the Alpine default `alpine` account, service accounts,
+sometimes root) can be logged into **without the password**. musl's `crypt()`
+returns the literal string `"*"` on failure, and an over-long key (musl caps
+SHA-crypt at 256 bytes) *is* a failure — so a password **> 256 bytes** hashes to
+`"*"`, which matches the stored `"*"`. The exploitation gotchas that make it look
+patched when it isn't: the winning key must be sent as the **same >256-byte
+password twice on one transport** (the first attempt primes sshd's cached salt,
+the second lands), and the target account needs a real login shell. Enumerate
+`shadow=*` candidates from the platform (the distro's default account first),
+not a generic user list. Read the public PoC for the exact attempt sequence
+before concluding the host is not vulnerable.
+
 ## Node.js `--inspect` / V8 inspector (9229+, usually 127.0.0.1)
 
 A Node process started with `--inspect[=host:port]` (visible in `ps`, a systemd
@@ -761,7 +783,26 @@ credentials and tokens.
     theft beats hash-cracking. (Version-pinned CVE example kept in `local.md`.)
   - Once you hold an admin API session, a global script with
     `execute_on = Zabbix server` runs shell on the server host and hands the
-    output back in the API response.
+    output back in the API response. **If that is disabled** ("global script
+    execution on Zabbix server is disabled by server configuration"), fall back
+    to `execute_on = agent` (`execute_on:"0"`) and run it against the server's
+    own host (default hostid `10084`, "Zabbix server") — the co-located agent
+    executes it. Two 7.0 gotchas: the manual-host scope is `scope:"2"`
+    (`scope:"1"` is an *action-operation* script and `script.execute` rejects it
+    with "Script is not allowed in manual host action"); and `script.execute`
+    needs a `hostid`, so list hosts with the admin session first.
+  - **A SQLi/visibility gate that stops the public PoC is a cue to chain a
+    *sibling* authz bug, not to abandon the CVE.** CVE-2024-42327's `selectRole`
+    injection only fires when the base `user.get` returns ≥1 row, and a sandboxed
+    *User*-role account (no group permissions) sees *no* users — the SLEEP probe
+    stays flat and the PoC yields nothing. The unlock is **CVE-2024-36467**
+    (missing authz in `user.update`, same ≤7.0.1 window): the account adds
+    *itself* to a privileged user group (`usrgrps:[{usrgrpid:7}]`, "Zabbix
+    administrators" — setting `roleid` is blocked, the group field is not), which
+    grants co-group *visibility*, so `user.get` now returns the admin and the
+    SQLi fires. General pattern: a vuln predicated on a non-empty result set is
+    not dead for a visibility-filtered principal — look for the authz/IDOR bug
+    that grants visibility first, then re-fire. *(unrested)*
 - **IPMI** (`623/udp`) → `nmap --script ipmi-cipher-zero`;
   dump the RAKP hash and crack (`ipmitool`/`msf ipmi_dumphashes`).
 - **VNC** (`5900`) → `nmap --script realvnc-auth-bypass`; captured `.vnc`
@@ -886,6 +927,34 @@ means arbitrary types are being instantiated. Registered string fields are
 XML-escaped on serialization, so you cannot inject a raw gadget into a *field*
 read back by a client — the deserialization-of-your-POST on the server is the
 primitive.
+
+## HashiCorp Consul (8500 HTTP API, 8300-8302 RPC/serf, 8600 DNS)
+
+A cluster of `8300/8301/8302` plus `8500` (often bound to `127.0.0.1`, so you
+meet it only after a foothold) is **HashiCorp Consul**. The agent commonly runs
+as **root**, which makes it a privesc primitive, not just a service: a health
+check of type `script`/`Args` is executed *by the agent*, so if you can register
+one you run a command as whatever the agent runs as.
+
+**The reasoning, not the recipe.** Pin and read the agent's own posture before
+assuming anything — `GET /v1/agent/self` returns `Config.Version`, and
+`DebugConfig` tells you the two facts that decide the attack:
+
+1. **Are ACLs actually enforced?** `ACLsEnabled:true` with a default-deny policy
+   stops anonymous writes; but labs frequently leave the anonymous token able to
+   register services, or ship `ACLDatacenter` set with no real policy. Test it —
+   `PUT /v1/agent/service/register` succeeding *is* the ACL check.
+2. **Are script checks enabled?** Exec checks only fire when the agent was
+   started with `enable_script_checks` or `enable_local_script_checks`. If they
+   are off, the register succeeds but nothing runs — re-read, don't keep poking.
+
+When both line up, register a service whose check `Args` is your command; it runs
+on the check `Interval` as the agent user. Return a result inside the box
+(a setuid shell, an authorized_keys write) rather than a callback — the API is on
+loopback and so is the agent. Deregister the service afterwards
+(`PUT /v1/agent/service/deregister/<id>`); it is your artifact. The register JSON
+and the `enable_script_checks` flag are the whole engagement — pin them first.
+The fix is ACL default-deny plus `enable_script_checks=false`.
 
 ## Kerberos-only SSH to a Windows host (GSSAPI)
 

