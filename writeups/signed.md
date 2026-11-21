@@ -1,6 +1,6 @@
 # Signed — walkthrough
 
-> Assume-breach Windows / Active Directory box. You start with one MSSQL login and
+> Assume-breach Windows / Active Directory box — Hack The Box, **Medium**. You start with one MSSQL login and
 > nothing else reachable. The whole path lives inside a single open port — 1433 —
 > and the lesson is that a *firewalled KDC does not switch Kerberos off*.
 

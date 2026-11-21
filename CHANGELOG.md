@@ -20,6 +20,19 @@ Engagements are expected to change the methodology (see `memory/patterns.md`),
 so minor releases are the normal cadence. An entry that says only "ran a box"
 does not belong here — what belongs is what the run *changed*.
 
+## [1.25.1] — 2026-11-21
+
+Documentation fix: record the confirmed difficulty rating of nine machines whose
+rating the repository did not state anywhere.
+
+- Difficulty added to six write-up headers: `checkpoint`, `environment` and
+  `signed` (Medium); `fluffy`, `planning` and `retro` (Easy). `fluffy`'s header
+  previously declined to assert a rating; it is now stated.
+- `writeups/README.md`: `Barrier`'s difficulty cell filled in (`—` → Medium).
+
+No new write-ups and no new roots; the published metric is unchanged at 100
+rooted and 94 chains.
+
 ## [1.25.0] — 2026-11-20
 
 The milestone release: **100 distinct rooted machines** in the flags ledger. Two

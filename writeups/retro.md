@@ -1,6 +1,6 @@
 # retro.vl — write-up
 
-> Vulnlab AD box. A pre-created computer account and an ESC1 template turn a
+> Vulnlab AD box — **Easy**. A pre-created computer account and an ESC1 template turn a
 > guessable trainee login into Domain Admin. Flags redacted.
 
 ## Recon

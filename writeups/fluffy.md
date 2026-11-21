@@ -1,7 +1,6 @@
 # Fluffy — HTB write-up
 
-> Flags redacted. Difficulty not independently confirmed — not asserted here.
-> Flags redacted.
+> Hack The Box · **Easy**. Flags redacted.
 
 Fluffy is an AD box that starts from low-priv domain creds and chains a
 file-based NTLM coercion, a service-account ACL cluster, and an AD CS ESC16

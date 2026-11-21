@@ -1,6 +1,6 @@
 # Checkpoint — walkthrough
 
-> Hack The Box · Active Directory · Windows Server 2025 DC
+> Hack The Box · **Medium** · Active Directory · Windows Server 2025 DC
 > Rooted from the assumed-breach credential `alex.turner : Checkpoint2024!`.
 
 ## Recon

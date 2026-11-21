@@ -1,6 +1,6 @@
 # environment.htb — write-up
 
-> Retired-box write-up. Flags redacted. The path: a leaked dev shortcut, a
+> Retired-box write-up — Hack The Box, **Medium**. Flags redacted. The path: a leaked dev shortcut, a
 > framework CVE that lets the request pick the environment, a trailing-dot
 > upload, a password vault its own key unlocked, and a sudo script that trusts
 > `BASH_ENV`.

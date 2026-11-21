@@ -1,6 +1,6 @@
 # planning.htb — write-up
 
-> Retired-box write-up, flags redacted. An assumed-breach Grafana login, a
+> Retired-box write-up — Hack The Box, **Easy**, flags redacted. An assumed-breach Grafana login, a
 > DuckDB RCE, a password sitting in the container's environment, and a
 > root-owned cron web UI reachable only from localhost.
 
